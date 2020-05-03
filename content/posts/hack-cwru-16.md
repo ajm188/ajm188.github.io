@@ -1,7 +1,7 @@
 ---
 title: "HackCWRU '16"
 date: 2016-02-12T14:23:48-04:00
-draft: true
+draft: false
 tags:
 - hackathon
 - cwru
