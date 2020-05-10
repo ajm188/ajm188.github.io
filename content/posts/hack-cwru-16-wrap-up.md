@@ -1,7 +1,7 @@
 ---
 title: "HackCWRU '16 Wrap Up"
 date: 2016-02-14T20:00:18-04:00
-draft: true
+draft: false
 tags:
 - hackathon
 - cwru

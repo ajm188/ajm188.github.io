@@ -84,3 +84,16 @@ header nav ul li a:focus {
 nav .social {
     float: right;
 }
+
+article h1 span {
+    font-size: 70%;
+    font-weight: lighter;
+    font-style: oblique;
+    display: block;
+}
+
+pre {
+    overflow: auto;
+    word-wrap: normal;
+    white-space: pre;
+}
