@@ -32,7 +32,7 @@ Also, I could in theory add dynamic content to my site, while still having GitHu
 All it would take is a service running on the droplet and a small tweak to the nginx config.
 Speaking of, my nginx config at this point looked something like:
 
-```
+```nginx
 server {
     listen 80;
     listen [::]:80;
@@ -70,7 +70,7 @@ I decided to use the webroot plugin, rather than "standalone" instructions.
 The webroot instructions seemed far simpler.
 So, I did:
 
-```
+```bash {linenos=false}
 letsencrypt certonly --webroot -w /var/www/fixedpoint -d fixedpoint.xyz -d www.fixedpoint.xyz
 ```
 
@@ -115,7 +115,7 @@ Makes sense to me.
 Turns out this "acme challenge" thing is one way to prove you own a domain.
 After a bit of googling, I settled on the following nginx config:
 
-```
+```nginx
 server {
     listen 80;
     listen [::]:80;
@@ -190,7 +190,7 @@ Next up, we need nginx to take incoming http requests and send back a 301 redire
 
 First up (after a fair amount of googling), I tried the following nginx config:
 
-```
+```nginx
 server {
     listen 80;
     listen [::]:80;
@@ -256,7 +256,7 @@ But, the internet's knowledge is boundless!
 
 Hilariously - but also a bit frustratingly - all it took was a single line added to the proxying instructions:
 
-```
+```nginx
 server {
     # ssl stuff
 
@@ -273,7 +273,7 @@ Now I don't get redirected to `www` when I click on "/blog"!
 
 So the final config looks like:
 
-```
+```nginx
 server {
     listen 80;
     listen [::]:80;
