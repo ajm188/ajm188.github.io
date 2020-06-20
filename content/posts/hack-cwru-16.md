@@ -16,7 +16,6 @@ security issues for non-Case students. It's lonely and cold out here -
 every time someone opens the door, a blast of wintry air comes in - so it's
 the perfect opportunity to do some reflection, thinking and writing.
 
-
 ## Goals
 
 Being a volunteer, I probably wouldn't have enough time to devote to a
