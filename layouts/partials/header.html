@@ -9,7 +9,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta name="description" content="{{ if eq .Section "post" }}{{ .Description }}{{ else }}{{ .Site.Params.description }}{{ end }}">
 
-	<title>{{ .Site.Title }}: {{ if eq .Section "post" }}{{ .Title }}{{ else }}Home{{ end }}</title>
+	<title>{{ .Site.Title }}{{ if not (eq .Title .Site.Title) }}: {{ .Title }}{{ end }}</title>
 
 	<link rel="canonical" href="{{ .Permalink }}">
 	{{with $rss := .OutputFormats.Get "RSS" }}<link href="{{ $rss.RelPermalink }}" rel="alternate" type="application/rss+xml" title="{{ $.Site.Title }}" />{{ end }}

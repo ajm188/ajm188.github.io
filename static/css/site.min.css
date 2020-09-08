@@ -85,6 +85,15 @@ nav .social {
     float: right;
 }
 
+footer {
+    position: relative;
+    padding: 10px 20px;
+    display: block;
+    text-align: left;
+    font-size: 70%;
+    color: gray;
+}
+
 article h1 span {
     font-size: 70%;
     font-weight: lighter;
