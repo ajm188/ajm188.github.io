@@ -2,10 +2,11 @@
 
 <div class="container home">
     {{ partial "navbar.html" . }}
-    <h1>Blog</h1>
+    <h1>{{ humanize .Section }}</h1>
 
     <h2>Featured</h2>
-    {{ range .Site.Pages.ByDate.Reverse }}
+    {{ with where .Site.RegularPages "Section" .Section }}
+    {{ range .ByDate.Reverse }}
     {{ if .Params.featured }}
     <article>
         <h3><a href="{{ .Permalink }}" title="{{ .Title }}">{{ .Title }}</a></h3>
@@ -13,13 +14,13 @@
     </article>
     {{ end }}
     {{ end }}
+    {{ end }}
 
     <hr/>
 
-    {{ with where .Site.Pages "Section" "posts" }}
+    {{ with where .Site.RegularPages "Section" .Section }}
     {{ range .ByDate.Reverse }}
     {{ if not .Params.featured }}
-    {{ if ne .Title "Posts" }}
     {{ if ne .Title .Site.Title }}
     {{ if ne .Title "About" }}
     <article>
@@ -27,7 +28,6 @@
         <div class="time">{{ .Date.Format "Monday, January 2, 2006" }}</div>
         <p>{{ .Summary }}</p>
     </article>
-    {{ end }}
     {{ end }}
     {{ end }}
     {{ end }}
