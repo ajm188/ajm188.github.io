@@ -3,8 +3,9 @@
 		<ul class="main">
 			<li><a href="{{ .Site.BaseURL }}">{{ .Site.Title }}</a></li>
 			<li><a href="{{ ref . "about.md" }}">About</a></li>
-			<li><a href="{{ .Site.BaseURL }}/posts">Posts</a></li>
-			<li><a href="{{ .Site.BaseURL }}/snippets">Snippets</a></li>
+			<li><a href="{{ .Site.BaseURL }}posts">Posts</a></li>
+			<li><a href="{{ .Site.BaseURL }}projects">Projects</a></li>
+			<li><a href="{{ .Site.BaseURL }}snippets">Snippets</a></li>
 		</ul>
 		<ul class="social">
 			{{ with .OutputFormats.Get "RSS" }}
