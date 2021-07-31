@@ -32,17 +32,17 @@ write this in a cleaner, more concise way. Taking advantage of couple details[^1
 
 ```go
 func foo(last string, args []string) []string {
-    return append([]string{"first"}, append(args..., keyspace)...)
+    return append([]string{"first"}, append(args, last)...)
 }
 ```
 
 ```go
 func foo(last string, args []string) []string {
-    return append(append([]string{"first"}, args...), keyspace)
+    return append(append([]string{"first"}, args...), last)
 }
 ```
 
-I prefer the second version due to it relying less on the variadic (`...`) operator.
+I prefer the second version arbitrarily.
 
 [^1]: Those details:
       * calling a function with an empty slice as the variadic arg is the same as not passing those args at all (i.e. `append(x, y...)` is the same as `append(x)` when `y` is an empty slice)
