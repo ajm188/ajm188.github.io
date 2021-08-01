@@ -22,7 +22,8 @@
 	{{ if .Site.IsServer }}
 	<link rel="stylesheet" href="/css/fontawesome.min.css" />
 	{{ end }}
-	<link rel="stylesheet" href="/css/site.min.css" />
+	{{ $stylesheet := resources.Get "css/site.css" | toCSS | minify | fingerprint }}
+	<link rel="stylesheet" href="{{ $stylesheet.Permalink }}" integrity="{{ $stylesheet.Data.Integrity }}" />
 	<!--<script src="/js/lib/modernizr-2.6.2.min.js"></script>-->
 </head>
 <body>
