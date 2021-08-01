@@ -4,13 +4,16 @@
     {{ partial "navbar.html" . }}
     <h1>Blog</h1>
 
+    {{ with where .Site.Pages "Params.featured" true }}
+    {{ $count := len . }}
+    {{ if gt $count 0 }}
     <h2>Featured</h2>
-    {{ range .Site.Pages.ByDate.Reverse }}
-    {{ if .Params.featured }}
+    {{ range .ByDate.Reverse }}
     <article>
         <h3><a href="{{ .Permalink }}" title="{{ .Title }}">{{ .Title }}</a></h3>
         <p>{{ .Description }}</p>
     </article>
+    {{ end }}
     {{ end }}
     {{ end }}
 

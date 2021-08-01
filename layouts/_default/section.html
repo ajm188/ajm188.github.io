@@ -4,14 +4,17 @@
     {{ partial "navbar.html" . }}
     <h1>{{ humanize .Section }}</h1>
 
-    <h2>Featured</h2>
     {{ with where .Site.RegularPages "Section" .Section }}
+    {{ with where . "Params.featured" true }}
+    {{ $count := len . }}
+    {{ if gt $count 0 }}
+    <h2>Featured</h2>
     {{ range .ByDate.Reverse }}
-    {{ if .Params.featured }}
     <article>
         <h3><a href="{{ .Permalink }}" title="{{ .Title }}">{{ .Title }}</a></h3>
         <p>{{ .Description }}</p>
     </article>
+    {{ end }}
     {{ end }}
     {{ end }}
     {{ end }}
