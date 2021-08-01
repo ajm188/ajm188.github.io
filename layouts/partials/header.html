@@ -19,10 +19,9 @@
 	<link rel="shortcut icon" href="/favicon.ico">
 
 	<link href="https://fonts.googleapis.com/css2?family=Literata:ital,wght@0,400..700;1,400..700" rel="stylesheet">
-	{{ if .Site.IsServer }}
-	<link rel="stylesheet" href="/css/fontawesome.min.css" />
-	{{ end }}
-	{{ $stylesheet := resources.Get "css/site.css" | toCSS | minify | fingerprint }}
+	{{- $fontawesome := resources.Get "css/fontawesome.min.css" | toCSS | fingerprint -}}
+	<link rel="stylesheet" href="{{ $fontawesome.Permalink }}" integrity="{{ $fontawesome.Data.Integrity }}" />
+	{{- $stylesheet := resources.Get "css/site.css" | toCSS | minify | fingerprint -}}
 	<link rel="stylesheet" href="{{ $stylesheet.Permalink }}" integrity="{{ $stylesheet.Data.Integrity }}" />
 	<!--<script src="/js/lib/modernizr-2.6.2.min.js"></script>-->
 </head>
