@@ -1,0 +1,39 @@
+{{ partial "header.html" . }}
+
+<div class="container home">
+    {{ partial "navbar.html" . }}
+    <h1>{{ humanize .Section }}</h1>
+
+    {{ with where .Site.RegularPages "Section" .Section }}
+    {{ with where . "Params.featured" true }}
+    {{ $count := len . }}
+    {{ if gt $count 0 }}
+    <h2>Featured</h2>
+    {{ range .ByDate.Reverse }}
+    <article>
+        <h3>{{ .Title }}&nbsp;<a class="fa fa-github" href="{{ .Params.repo }}" target="_blank"></a></h3>
+        {{ .Content }}
+    </article>
+    {{ end }}
+    {{ end }}
+    <hr/>
+    {{ end }}
+    {{ end }}
+
+    {{ with where .Site.RegularPages "Section" .Section }}
+    {{ range .ByDate.Reverse }}
+    {{ if not .Params.featured }}
+    {{ if ne .Title .Site.Title }}
+    {{ if ne .Title "About" }}
+    <article>
+        <h3>{{ .Title }}&nbsp;<a class="fa fa-github" href="{{ .Params.repo }}" target="_blank"></a></h3>
+        {{ .Content }}
+    </article>
+    {{ end }}
+    {{ end }}
+    {{ end }}
+    {{ end }}
+    {{ end }}
+</div>
+
+{{ partial "footer.html" . }}
