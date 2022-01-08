@@ -1,7 +1,6 @@
 ---
 title: "VTAdmin"
 date: 2020-12-08T23:10:06-04:00
-draft: true
 featured: true
 repo: https://github.com/vitessio/vitess
 ---
