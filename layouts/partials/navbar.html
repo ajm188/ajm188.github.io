@@ -1,42 +1,35 @@
 <header>
 	<nav>
-		<ul class="main">
-			<li><a href="{{ .Site.BaseURL }}">{{ .Site.Title }}</a></li>
-			<li><a href="{{ ref . "about.md" }}">About</a></li>
-			{{ with where .Site.Pages "Section" "posts" }}
-			{{ with $count := len . }}
-			{{ if ne $count 0 }}
-			<li><a href="{{ $.Site.BaseURL }}/posts">Posts</a></li>
-			{{ end }}
-			{{ end }}
-			{{ end }}
-			{{ with where .Site.Pages "Section" "projects" }}
-			{{ with $count := len . }}
-			{{ if ne $count 0 }}
-			<li><a href="{{ $.Site.BaseURL }}/projects">Projects</a></li>
-			{{ end }}
-			{{ end }}
-			{{ end }}
-			{{ with where .Site.Pages "Section" "snippets" }}
-			{{ with $count := len . }}
-			{{ if ne $count 0 }}
-			<li><a href="{{ $.Site.BaseURL }}/snippets">Snippets</a></li>
-			{{ end }}
-			{{ end }}
-			{{ end }}
-		</ul>
-		<ul class="social">
-			{{ with .OutputFormats.Get "RSS" }}
-			<li>
-				<a href="{{ .RelPermalink }}" class="fa fa-rss" target="_blank"></a>
-			</li>
-			{{ end }}
-			<li>
-				<a class="fa fa-github" href="https://github.com/ajm188" target="_blank"></a>
-			</li>
-			<li>
-				<a class="fa fa-twitter" href="https://twitter.com/andrew_mason1" target="_blank"></a>
-			</li>
-		</ul>
+		<a href="{{ .Site.BaseURL }}">{{ .Site.Title }}</a>
+		<a href="{{ ref . "about.md" }}">About</a>
+		{{ with where .Site.Pages "Section" "posts" }}
+		{{ with $count := len . }}
+		{{ if ne $count 0 }}
+		<a href="{{ "posts/" | absURL }}">Posts</a>
+		{{ end }}
+		{{ end }}
+		{{ end }}
+		{{ with where .Site.Pages "Section" "projects" }}
+		{{ with $count := len . }}
+		{{ if ne $count 0 }}
+		<a href="{{ "projects/" | absURL }}">Projects</a>
+		{{ end }}
+		{{ end }}
+		{{ end }}
+		{{ with where .Site.Pages "Section" "snippets" }}
+		{{ with $count := len . }}
+		{{ if ne $count 0 }}
+		<a href="{{ "snippets/" | absURL }}">Snippets</a>
+		{{ end }}
+		{{ end }}
+		{{ end }}
+		&nbsp;
+		{{ with .Site.GetPage "posts" }}
+		{{ with .OutputFormats.Get "rss" }}
+		<a href="{{ .RelPermalink }}" class="fa fa-rss" target="_blank"></a>
+		{{ end }}
+		{{ end }}
+		<a class="fa fa-github" href="https://github.com/ajm188" target="_blank"></a>
+		<a class="fa fa-twitter" href="https://twitter.com/andrew_mason1" target="_blank"></a>
 	</nav>
 </header>
