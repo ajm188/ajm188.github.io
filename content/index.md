@@ -18,4 +18,4 @@ When I'm not working on databases, you can find me tinkering on a [side project]
 [Slack]: https://slack.com
 [Vitess]: https://vitess.io
 
-[side project]: {{ "projects/" | absURL }}
+[side project]: {{< ref "projects" >}}
