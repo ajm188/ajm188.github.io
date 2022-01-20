@@ -2,7 +2,18 @@
 
 <div>
     {{ partial "navbar.html" . }}
-    {{ .Content }}
+    <p>
+        Hello!
+        I'm Andrew; I'm a software infrastructure engineer working on <a href="https://vitess.io">Vitess</a> for <a href="https://planetscale.com">Planetscale</a>.
+        Before that I worked at <a href="https://slack.com">Slack</a> on the datastores team, first as a Database Reliability Engineer, and then primarily on Vitess itself.
+        I'm also a Vitess maintainer.
+    </p>
+    <p>
+        A teammate once referred to me as a Professional Database Mercenary.
+    </p>
+    <p>
+        When I'm not working on databases, you can find me tinkering on a <a href="{{ "projects/" | absURL }}">side project</a> (usually in Go), or out for a run, reading a book, or playing a video game (usually by <em><a href="https://www.fromsoftware.jp/ww/">FromSoftware</a></em>).
+    </p>
 </div>
 
 {{ partial "footer.html" . }}
