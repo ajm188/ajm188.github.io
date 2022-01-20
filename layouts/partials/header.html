@@ -22,6 +22,27 @@
 	<link rel="stylesheet" href="{{ $fontawesome.Permalink }}" integrity="{{ $fontawesome.Data.Integrity }}" />
 	{{- $simplecss := resources.Get "css/simplecss.min.css" | fingerprint -}}
 	<link rel="stylesheet" href="{{ $simplecss.Permalink }}" integrity="{{ $simplecss.Data.Integrity }}" />
+	<style>
+		.time {
+			font-style: oblique;
+		}
+
+		a.fa {
+			text-decoration: none;
+		}
+
+		article h1 span {
+			font-size: 80%;
+			font-weight: lighter;
+			font-style: oblique;
+			display: block;
+		}
+
+		pre {
+			word-wrap: normal;
+			white-space: pre;
+		}
+	</style>
 	<!--<script src="/js/lib/modernizr-2.6.2.min.js"></script>-->
 </head>
 <body>
