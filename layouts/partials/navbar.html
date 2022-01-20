@@ -1,7 +1,7 @@
 <header>
 	<nav>
 		<a href="{{ .Site.BaseURL }}">{{ .Site.Title }}</a>
-		<a href="{{ ref . "about.md" }}">About</a>
+		<a href="{{ "about/" | absURL }}">About</a>
 		{{ with where .Site.Pages "Section" "posts" }}
 		{{ with $count := len . }}
 		{{ if ne $count 0 }}
