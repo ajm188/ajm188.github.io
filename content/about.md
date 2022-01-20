@@ -5,18 +5,13 @@ draft: false
 type: page
 ---
 
-Hello!
-I'm Andrew; I'm a software infrastructure engineer working on [Vitess] for [Planetscale].
-Before that I worked at [Slack] on the datastores team, first as a Database Reliability Engineer, and then primarily on Vitess itself.
-I'm also a Vitess maintainer.
+This site is built with [`hugo`][hugo] and deployed via [GitHub Actions][publish_action].
+It is currently styled with [`simplecss`][simplecss] with minor overrides.
 
-A teammate once referred to me as a Professional Database Mercenary.
+The original design and layout was taken from [Jessie Frazelle's blog], with minor modifications.
+This has diverged over time, most notably when I transitioned to `simplecss`.
 
-When I'm not working on databases, you can find me tinkering on a [side project] (usually in Go), or out for a run, reading a book, or playing a video game (usually by _[FromSoftware]_).
-
-[FromSoftware]: https://www.fromsoftware.jp/ww/
-[Planetscale]: https://planetscale.com
-[Slack]: https://slack.com
-[Vitess]: https://vitess.io
-
-[side project]: {{< ref "projects" >}}
+[hugo]: https://gohugo.io
+[publish_action]: https://github.com/ajm188/ajm188.github.io/blob/main/.github/workflows/publish-site.yaml
+[simplecss]: https://simplecss.org
+[Jessie Frazelle's blog]: https://blog.jessfraz.com
