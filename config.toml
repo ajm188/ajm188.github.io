@@ -12,4 +12,9 @@ disableKinds = ["taxonomy", "taxonomyTerm"]
   lineNos=true
   lineNumbersInTable=true
   noClasses=true
-  style="tango"
+  ## Good alternatives include:
+  # - fruity (eh)
+  # - monokai
+  # - native
+  # - solarized-dark(256)? but they conflict with inline code style
+  style="dracula"
