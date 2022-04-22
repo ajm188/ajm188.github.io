@@ -9,9 +9,10 @@ tags:
 ---
 
 For the last few years, I have been working on a project within [Vitess](https://vitess.io) called [VTAdmin][vtadmin_rfc][^1].
-It's an operator-friendly API and UI replacement for the older UIs, and in order to function, it needs to make gRPC requests to both `vtctld` and `vtgate` components in one (or more!) Vitess deployments.
+It's an operator-friendly API and UI replacement for the older vtcltd UI control panel.
+In order to function, it needs to make gRPC requests to both `vtctld` and `vtgate` components in one (or more!) Vitess deployments.
 
-In order to connect to `vtgate` and `vtctld` components, VTAdmin relies on a Discovery abstraction, which defines an interface for fetching lists of VTGate and Vtctld addresses:
+To connect to `vtgate` and `vtctld` components, VTAdmin relies on a Discovery abstraction, which defines an interface for fetching lists of VTGate and Vtctld addresses:
 
 ```go
 // (N.B. There are other methods in the interface which I've omitted.)
@@ -28,7 +29,7 @@ This works great for a proof-of-concept, but has several fundamental problems th
 
 ### Problem 1: Uneven Load
 
-The API model of VTAdmin, by design, is to `Dial` a proxy to a VTGate or Vtctld the first time you need a connection to that component.
+The model of `vtadmin-api`, by design, is to `Dial` a proxy to a VTGate or Vtctld the first time we need a connection to that component.
 Then, in future `Dial` calls, the proxy sees it already has a connection; if it's still "healthy", we reuse the connection and return immediately.
 But if the connection ever becomes "unhealthy", we throw it away, discover a new dial address, and make a new connection (see "Problem 2" for how this went in practice).
 
