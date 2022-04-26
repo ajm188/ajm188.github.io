@@ -1,6 +1,6 @@
 ---
 title: "Implementing a Custom gRPC Resolver"
-date: 2022-03-31T06:40:21-04:00
+date: 2022-04-26T13:13:21-04:00
 tags:
 - golang
 - grpc
