@@ -3,6 +3,12 @@ languageCode = "en-us"
 title = "Home"
 disableKinds = ["taxonomy", "taxonomyTerm"]
 
+[outputFormats]
+  [outputFormats.txt]
+    isPlainText = true
+    notAlternative = true
+    mediaType = "text/plain"
+
 [markup]
   [markup.highlight]
   codeFences=true
