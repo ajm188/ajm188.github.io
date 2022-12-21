@@ -1,6 +1,6 @@
-{{- if .Params.humans.team -}}
+{{- if .Site.Data.humans.team -}}
 /* TEAM */
-{{ range .Params.humans.team -}}
+{{ range .Site.Data.humans.team -}}
 {{- range . -}}
 {{- range $key, $value := . }}
     {{ $key }}: {{ $value -}}
@@ -8,9 +8,9 @@
 {{ end }}
 {{ end }}
 {{ end -}}
-{{- if .Params.humans.thanks -}}
+{{- if .Site.Data.humans.thanks -}}
 /* THANKS */
-{{ range .Params.humans.thanks -}}
+{{ range .Site.Data.humans.thanks -}}
 {{- range . -}}
 {{- range $key, $value := . }}
     {{ $key }}: {{ $value -}}
@@ -19,12 +19,17 @@
 {{ end }}
 {{ end -}}
 /* SITE */
-{{ $date_format := default "2006/02/01 15:04:05 MST" .Params.humans.site.date_format }}
+{{ $date_format := default "2006/02/01 15:04:05 MST" .Site.Data.humans.site.date_format }}
     Last update: {{ now.UTC.Format $date_format }}
     Language{{ if .Site.IsMultiLingual }}s{{ end }}: {{ delimit .Site.Languages " / " }}
-    {{- if .Params.humans.site.doctype }}
-    Doctype: {{ .Params.humans.site.doctype }}
+    {{- if .Site.Data.humans.site.doctype }}
+    Doctype: {{ .Site.Data.humans.site.doctype }}
     {{- end -}}
-    {{- if .Params.humans.site.tools }}
-    Tools: {{ delimit .Params.humans.site.tools ", " }}
+    {{- if .Site.Data.humans.site.tools }}
+    Tools: {{ delimit .Site.Data.humans.site.tools ", " }}
     {{ end -}}
+
+{{- if .Content }}
+===
+{{ .Content }}
+{{ end }}

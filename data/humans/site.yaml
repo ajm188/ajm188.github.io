@@ -1,0 +1,7 @@
+date_format: "Monday, January 2, 2006"
+doctype: HTML5
+tools:
+- VSCode
+- hugo
+- simplecss
+- GitHub Actions
