@@ -1,7 +1,6 @@
 ---
 title: "humans.txt"
 date: 2022-12-21T06:36:44-05:00
-draft: true
 ---
 
 I just added a [humans.txt] file to this site.
