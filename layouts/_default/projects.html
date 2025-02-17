@@ -11,7 +11,7 @@
     <h2>Featured</h2>
     {{ range .ByDate.Reverse }}
     <article>
-        <h3>{{ .Title }}&nbsp;<a class="fa fa-github" href="{{ .Params.repo }}" target="_blank"></a></h3>
+        <h3>{{ .Title }}&nbsp;<a class="fa fa-brands fa-github" href="{{ .Params.repo }}" target="_blank"></a></h3>
         {{ .Content }}
     </article>
     {{ end }}
@@ -26,7 +26,7 @@
     {{ if ne .Title .Site.Title }}
     {{ if ne .Title "About" }}
     <article>
-        <h3>{{ .Title }}&nbsp;<a class="fa fa-github" href="{{ .Params.repo }}" target="_blank"></a></h3>
+        <h3>{{ .Title }}&nbsp;<a class="fa fa-brands fa-github" href="{{ .Params.repo }}" target="_blank"></a></h3>
         {{ .Content }}
     </article>
     {{ end }}
