@@ -1,0 +1,99 @@
+<!doctype html><html class=no-js lang=en>
+<head>
+<meta charset=utf-8>
+<meta http-equiv=x-ua-compatible content="IE=edge,chrome=1">
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=description content>
+<link type=text/plain rel=author href=/humans.txt>
+<title>Home: humans.txt</title>
+<link rel=canonical href=https://a.ndrw.dev/posts/humanstxt/>
+<link rel="shortcut icon" href=/favicon.ico><link rel=stylesheet href=https://a.ndrw.dev/css/fontawesome.min.85a136712bb18ba2ee6cd5375b6f14d9bbd245281518f2c68285053d9d0bb46d.css integrity="sha256-haE2cSuxi6LubNU3W28U2bvSRSgVGPLGgoUFPZ0LtG0="><link rel=stylesheet href=https://a.ndrw.dev/css/simplecss.min.0f03a309674cd62af1eecbaf9802cd4c6b7a1a87e842012262e6f5dccd49ed2a.css integrity="sha256-DwOjCWdM1irx7suvmALNTGt6GofoQgEiYub13M1J7So=">
+<style>.time{font-style:oblique}a.fa{text-decoration:none;line-height:2}article h1 span{font-size:80%;font-weight:lighter;font-style:oblique;display:block}pre{word-wrap:normal;white-space:pre}code{font-size:.9em}pre code{color:#ddd}</style>
+</head>
+<body>
+<div>
+<header>
+<nav>
+<a href=https://a.ndrw.dev>Home</a>
+<a href=https://a.ndrw.dev/about/>About</a>
+<a href=https://a.ndrw.dev/posts/>Posts</a>
+<a href=https://a.ndrw.dev/projects/>Projects</a>
+&nbsp;
+<a href=/posts/index.xml class="fa fa-rss" target=_blank></a>
+<a class="fa fa-brands fa-github" style=height:max-content href=https://github.com/ajm188 target=_blank></a>
+<a class="fa fa-brands fa-bluesky" href=https://bsky.app/profile/amason.bsky.social target=_blank></a>
+</nav>
+</header>
+<article>
+<h1>humans.txt</h1>
+<div class=time>Wednesday, December 21, 2022</div>
+<p>I just added a <a href=/humans.txt>humans.txt</a> file to this site.</p>
+<p>I learned about this idea a few weeks back and really liked it!
+It&rsquo;s simple, it&rsquo;s plaintext, and it spits in the face of the subtext of <code>robots.txt</code> being &ldquo;the internet is for robots (and not for humans).&rdquo;</p>
+<p>You can read more about it <a href=https://humanstxt.org>here</a>.</p>
+<h2 id=implementation-details>Implementation Details</h2>
+<p>Initially, I tried to &ldquo;just&rdquo; make a <code>Page</code> at the top-level of my content (similar to how my <a href=/about>about page</a>) is generated, but have <code>hugo</code> produce a text file instead of HTML.</p>
+<p>Once I got the output format hooked up<sup id=fnref:1><a href=#fn:1 class=footnote-ref role=doc-noteref>1</a></sup>, I was off to the races &mldr; <em>except</em> &mldr; it looked (literally) like this:</p>
+<pre tabindex=0><code>Last update: {{ now.UTC.Format &quot;2006/02/01 15:04:05 MST&quot; }}
+</code></pre><p><em>Shoot,</em> I thought, <em>can I only have template directives render when outputting HTML files?</em>
+I really wanted this line in particular to render so I didn&rsquo;t have to remember to update the date every time I pushed changes.</p>
+<p>Many, <em>many</em> hours of random googling and &ldquo;what about <em>this</em> random configuration tweak?&rdquo; later, I realized that if I put all the templating in the layout file instead of directly in the content file, then it would work.</p>
+<p>In fact, as I began writing this post, I attempted (and failed) to use a <code>{{ ref }}</code> directive.
+It occurs to me that template directives may only be possible in layout files, full stop, and that it&rsquo;s simply been so long since I&rsquo;ve done much writing here that I&rsquo;ve forgotten, if I ever knew that to begin with.</p>
+<h3 id=weird-and-grosstrade>Weird and Gross™</h3>
+<p>Now, because I moved some of the rendering from the content to the layout, I was now in a situation where my layout needed to render, in <em>rough</em> pseudocode:</p>
+<pre tabindex=0><code>{{ render stuff-before-LastUpdated-in-content-file }}
+Last update: {{ now.UTC.Format &quot;2006/02/01 15:04:05 MST&quot; }}
+{{ render stuff-after-LastUpdated-in-content-file }}
+</code></pre><p>which is &mldr; Weird and Gross™.</p>
+<h3 id=data-files>Data Files</h3>
+<p>My next idea, then, was to move <em>all</em> of the <code>humans.txt</code> metadata into frontmatter, and create a dedicated page type that whose layout would render entirely from frontmatter.
+That looks like <a href=https://github.com/ajm188/ajm188.github.io/blob/74bb7fcddf8890975eaf37077e715ac6551ac0d4/layouts/humans/single.txt>this</a>, and it totally works!</p>
+<p>The downside here is my content file is now (in theory) an ever-growing frontmatter document with no actual content in it.
+Which is Weird and Gross™, but in a different way.</p>
+<p>Then I stumbled onto <a href=https://gohugo.io/templates/data-templates/>data files</a>, which</p>
+<blockquote>
+<p>are not for generating standalone pages. They should supplement content files by &mldr; extending the content when the front matter fields grow out of control</p>
+</blockquote>
+<p>Well, well, well! If that isn&rsquo;t exactly the problem I&rsquo;m trying to solve!</p>
+<p>So, now my <code>layouts/humans/single.txt</code> renders data from three files:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th><code>humans.txt</code> Section</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data/humans/team.yaml</code></td>
+<td><code>/* TEAM */</code></td>
+</tr>
+<tr>
+<td><code>data/humans/thanks.yaml</code></td>
+<td><code>/* THANKS */</code></td>
+</tr>
+<tr>
+<td><code>data/humans/site.yaml</code></td>
+<td><code>/* SITE */</code></td>
+</tr>
+</tbody>
+</table>
+<p>Much nicer!</p>
+<section class=footnotes role=doc-endnotes>
+<hr>
+<ol>
+<li id=fn:1 role=doc-endnote>
+<p>Adding <a href=https://github.com/ajm188/ajm188.github.io/blob/4970387a3d1b25f5cc67162012b4b981220613c0/config.toml#L6-L10>this</a> to <code>config.toml</code> and dropping a template in <code>layouts/page/single.txt</code> got me past <code>found no layout file "txt" for kind "page"</code>.&#160;<a href=#fnref:1 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+</ol>
+</section>
+</article>
+</div>
+<footer>
+&copy; Andrew Mason 2025
+&nbsp;
+<a href=https://twitter.com/andrew_mason1 target=_blank>@andrew_mason1</a>
+</footer>
+</body>
+</html>

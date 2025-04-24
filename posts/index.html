@@ -1,0 +1,71 @@
+<!doctype html><html class=no-js lang=en>
+<head>
+<meta charset=utf-8>
+<meta http-equiv=x-ua-compatible content="IE=edge,chrome=1">
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=description content>
+<link type=text/plain rel=author href=/humans.txt>
+<title>Home: Posts</title>
+<link rel=canonical href=https://a.ndrw.dev/posts/>
+<link href=/posts/index.xml rel=alternate type=application/rss+xml title=Home>
+<link rel="shortcut icon" href=/favicon.ico><link rel=stylesheet href=https://a.ndrw.dev/css/fontawesome.min.85a136712bb18ba2ee6cd5375b6f14d9bbd245281518f2c68285053d9d0bb46d.css integrity="sha256-haE2cSuxi6LubNU3W28U2bvSRSgVGPLGgoUFPZ0LtG0="><link rel=stylesheet href=https://a.ndrw.dev/css/simplecss.min.0f03a309674cd62af1eecbaf9802cd4c6b7a1a87e842012262e6f5dccd49ed2a.css integrity="sha256-DwOjCWdM1irx7suvmALNTGt6GofoQgEiYub13M1J7So=">
+<style>.time{font-style:oblique}a.fa{text-decoration:none;line-height:2}article h1 span{font-size:80%;font-weight:lighter;font-style:oblique;display:block}pre{word-wrap:normal;white-space:pre}code{font-size:.9em}pre code{color:#ddd}</style>
+</head>
+<body>
+<div>
+<header>
+<nav>
+<a href=https://a.ndrw.dev>Home</a>
+<a href=https://a.ndrw.dev/about/>About</a>
+<a href=https://a.ndrw.dev/posts/>Posts</a>
+<a href=https://a.ndrw.dev/projects/>Projects</a>
+&nbsp;
+<a href=/posts/index.xml class="fa fa-rss" target=_blank></a>
+<a class="fa fa-brands fa-github" style=height:max-content href=https://github.com/ajm188 target=_blank></a>
+<a class="fa fa-brands fa-bluesky" href=https://bsky.app/profile/amason.bsky.social target=_blank></a>
+</nav>
+</header>
+<h1>Posts</h1>
+<article>
+<h3><a href=https://a.ndrw.dev/posts/humanstxt/ title=humans.txt>humans.txt</a></h3>
+<div class=time>Wednesday, December 21, 2022</div>
+<p>I just added a humans.txt file to this site.
+I learned about this idea a few weeks back and really liked it! It&rsquo;s simple, it&rsquo;s plaintext, and it spits in the face of the subtext of robots.txt being &ldquo;the internet is for robots (and not for humans).&rdquo;
+You can read more about it here.
+Implementation Details Initially, I tried to &ldquo;just&rdquo; make a Page at the top-level of my content (similar to how my about page) is generated, but have hugo produce a text file instead of HTML.</p>
+</article>
+<article>
+<h3><a href=https://a.ndrw.dev/posts/custom-grpc-resolver/ title="Implementing a Custom gRPC Resolver">Implementing a Custom gRPC Resolver</a></h3>
+<div class=time>Tuesday, April 26, 2022</div>
+<p>For the last few years, I have been working on a project within Vitess called VTAdmin1. It&rsquo;s an operator-friendly API and UI replacement for the older vtcltd UI control panel. In order to function, it needs to make gRPC requests to both vtctld and vtgate components in one (or more!) Vitess deployments.
+To connect to vtgate and vtctld components, VTAdmin relies on a Discovery abstraction, which defines an interface for fetching lists of VTGate and Vtctld addresses:</p>
+</article>
+<article>
+<h3><a href=https://a.ndrw.dev/posts/lets-encrypt-gh-pages/ title="Let's Encrypt This Blog">Let's Encrypt This Blog</a></h3>
+<div class=time>Monday, March 13, 2017</div>
+<p>Disclaimer First things first, I need to tell you something. For most use cases, the following is going to be unnecessary. If all you want is a blog with the green padlock, maybe with a custom domain, and you&rsquo;re not a masochist, this post is likely useless to you. GitHub pages gives you HTTPS for free. Spend your time reading something more valuable.
+Initial Setup However, I am a masochist. Or, maybe I&rsquo;m thinking ahead to future use cases.</p>
+</article>
+<article>
+<h3><a href=https://a.ndrw.dev/posts/literate-conway/ title="Literate Conway">Literate Conway</a></h3>
+<div class=time>Sunday, June 12, 2016</div>
+<p>About a month ago, I sat down to write a Haskell implementation of Conway&rsquo;s Game of Life.
+Taking a literate programming approach, let&rsquo;s walk through my solution.
+First things first, let&rsquo;s make a Cell type:
+1 type Cell = Bool This is nothing more than a simple type alias. The Bool type is a natural way to represent the cell, with live cells being True and dead cells being False.</p>
+</article>
+<article>
+<h3><a href=https://a.ndrw.dev/posts/rails-travis-ci-and-factory-girl/ title="Rails, Travis-CI, and Factory Girl">Rails, Travis-CI, and Factory Girl</a></h3>
+<div class=time>Saturday, April 18, 2015</div>
+<p>I spent the better part of tonight trying to debug getting Travis-CI set up on a repository I&rsquo;m working on, so I thought I&rsquo;d write up what the problem was, and hopefully that may eventually help someone else not go through the same headaches.
+This gist was the original error I was trying to debug. See line 503 of log.txt for the postgres error.
+Before I begin explaining the problem, the fix is to change the Gemfile:</p>
+</article>
+</div>
+<footer>
+&copy; Andrew Mason 2025
+&nbsp;
+<a href=https://twitter.com/andrew_mason1 target=_blank>@andrew_mason1</a>
+</footer>
+</body>
+</html>

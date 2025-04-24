@@ -1,0 +1,837 @@
+<!doctype html><html class=no-js lang=en>
+<head>
+<meta charset=utf-8>
+<meta http-equiv=x-ua-compatible content="IE=edge,chrome=1">
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=description content>
+<link type=text/plain rel=author href=/humans.txt>
+<title>Home: Implementing a Custom gRPC Resolver</title>
+<link rel=canonical href=https://a.ndrw.dev/posts/custom-grpc-resolver/>
+<link rel="shortcut icon" href=/favicon.ico><link rel=stylesheet href=https://a.ndrw.dev/css/fontawesome.min.85a136712bb18ba2ee6cd5375b6f14d9bbd245281518f2c68285053d9d0bb46d.css integrity="sha256-haE2cSuxi6LubNU3W28U2bvSRSgVGPLGgoUFPZ0LtG0="><link rel=stylesheet href=https://a.ndrw.dev/css/simplecss.min.0f03a309674cd62af1eecbaf9802cd4c6b7a1a87e842012262e6f5dccd49ed2a.css integrity="sha256-DwOjCWdM1irx7suvmALNTGt6GofoQgEiYub13M1J7So=">
+<style>.time{font-style:oblique}a.fa{text-decoration:none;line-height:2}article h1 span{font-size:80%;font-weight:lighter;font-style:oblique;display:block}pre{word-wrap:normal;white-space:pre}code{font-size:.9em}pre code{color:#ddd}</style>
+</head>
+<body>
+<div>
+<header>
+<nav>
+<a href=https://a.ndrw.dev>Home</a>
+<a href=https://a.ndrw.dev/about/>About</a>
+<a href=https://a.ndrw.dev/posts/>Posts</a>
+<a href=https://a.ndrw.dev/projects/>Projects</a>
+&nbsp;
+<a href=/posts/index.xml class="fa fa-rss" target=_blank></a>
+<a class="fa fa-brands fa-github" style=height:max-content href=https://github.com/ajm188 target=_blank></a>
+<a class="fa fa-brands fa-bluesky" href=https://bsky.app/profile/amason.bsky.social target=_blank></a>
+</nav>
+</header>
+<article>
+<h1>Implementing a Custom gRPC Resolver</h1>
+<div class=time>Tuesday, April 26, 2022</div>
+<p>For the last few years, I have been working on a project within <a href=https://vitess.io>Vitess</a> called <a href=https://github.com/vitessio/vitess/issues/7117>VTAdmin</a><sup id=fnref:1><a href=#fn:1 class=footnote-ref role=doc-noteref>1</a></sup>.
+It&rsquo;s an operator-friendly API and UI replacement for the older vtcltd UI control panel.
+In order to function, it needs to make gRPC requests to both <code>vtctld</code> and <code>vtgate</code> components in one (or more!) Vitess deployments.</p>
+<p>To connect to <code>vtgate</code> and <code>vtctld</code> components, VTAdmin relies on a Discovery abstraction, which defines an interface for fetching lists of VTGate and Vtctld addresses:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">5
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=color:#6272a4>// (N.B. There are other methods in the interface which I&#39;ve omitted.)
+</span><span style=color:#6272a4></span><span style=color:#8be9fd;font-style:italic>type</span> Discovery <span style=color:#8be9fd;font-style:italic>interface</span> {
+    <span style=color:#50fa7b>DiscoverVTGateAddrs</span>(ctx context.Context, tags []<span style=color:#8be9fd>string</span>) ([]<span style=color:#8be9fd>string</span>, <span style=color:#8be9fd>error</span>)
+    <span style=color:#50fa7b>DiscoverVtctldAddrs</span>(ctx context.Context, tags []<span style=color:#8be9fd>string</span>) ([]<span style=color:#8be9fd>string</span>, <span style=color:#8be9fd>error</span>)
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>VTAdmin wraps these gRPC connections within structs called, respectively, <code>vtsql.DB</code> (which proxies to VTGates) and <code>vtctldclient.Proxy</code> (which proxies to Vtctlds).</p>
+<p>In the original implementation, when calling <code>Dial</code> on one of these components, VTAdmin would use the Discovery implementation for that cluster to lookup a <em>single</em> address, and call <code>grpc.Dial</code> to that address.
+This works great for a proof-of-concept, but has several fundamental problems that would surface over time.</p>
+<h3 id=problem-1-uneven-load>Problem 1: Uneven Load</h3>
+<p>The model of <code>vtadmin-api</code>, by design, is to <code>Dial</code> a proxy to a VTGate or Vtctld the first time we need a connection to that component.
+Then, in future <code>Dial</code> calls, the proxy sees it already has a connection; if it&rsquo;s still &ldquo;healthy&rdquo;, we reuse the connection and return immediately.
+But if the connection ever becomes &ldquo;unhealthy&rdquo;, we throw it away, discover a new dial address, and make a new connection (see &ldquo;Problem 2&rdquo; for how this went in practice).</p>
+<p>In effect, this meant that <em>for the life of the process</em>, VTAdmin would send <strong>every single RPC</strong> to a single host.
+For small use cases, this is Fine™, but it&rsquo;s certainly not great, and could knock over components at high enough usage.</p>
+<p>Of course, you can spin up multiple <code>vtadmin-api</code> processes, and hope that they each pick a different gate, but the API is so lightweight that this feels like a very silly and unnecessarily expensive &ldquo;solution.&rdquo;</p>
+<h3 id=problem-2-grpc-vs-proxies---done-->Problem 2: gRPC vs Proxies </h3>
+<p>By far the biggest issue with this approach happens when a VTGate or a Vtctld <em>goes away</em>.
+Sometimes, there&rsquo;s network weather, and gRPC&rsquo;s <code>ClientConn</code> will internally handle the business of re-establishing a connection to the server, and we&rsquo;re all good.
+The word &ldquo;internally&rdquo; there, though, is both a blessing and a curse.
+You don&rsquo;t have to worry about — or manage — these details at all, but at the same time, gRPC<sup id=fnref:2><a href=#fn:2 class=footnote-ref role=doc-noteref>2</a></sup> exposes almost none of this to the end user of a <code>ClientConn</code>, no matter how much they legitimately need it.</p>
+<p>Which makes extremely relevant the fact that both VTGates and Vtctlds are stateless components.
+Stateless components are awesome!
+You can put them in an auto-scaling group (ASG) and let your cloud provider make sure you have sufficient capacity, and cycle your hosts so they don&rsquo;t stick around forever.
+You can easily implement a <a href=https://martinfowler.com/bliki/BlueGreenDeployment.html>blue-green deploy</a> mechanism based on setting the version you want to run and simply terminating hosts in the ASG.</p>
+<p>And all of this is great, and will make your life as an operator simpler.
+You&rsquo;ll also break VTAdmin.</p>
+<p>You see, gRPC&rsquo;s &ldquo;transient failure retry&rdquo; mechanism can&rsquo;t, as far as I was ever able to observe, tell the different between network weather (&ldquo;this host is gone for now, but it&rsquo;ll come back, just keep trying to reconnect&rdquo;) and more permanent failure (&ldquo;this host has gone to a server farm upstate, you can try all you like but it&rsquo;s never coming back&rdquo;).
+So, if VTAdmin had <code>Dial</code>-ed a Vtctld, and the ASG cycled it (or you did a deploy, or you manually terminated, or, or, or), the only way to get VTAdmin working again for that cluster is to completely restart the <code>vtadmin-api</code> process.</p>
+<p>What we actually need is for VTAdmin to:</p>
+<ol>
+<li>Realize the connection is gone and fully <code>Close</code> it.</li>
+<li>Re-discover (via its <code>Discovery</code> implementation) a new host to dial and <code>grpc.Dial</code> that address.</li>
+</ol>
+<p>But all we have is the sledgehammer of a full restart.
+That&rsquo;s a big bummer, and also requires manual intervention.</p>
+<p>We took a few attempts to <a href=https://github.com/vitessio/vitess/pull/7709>address</a> or <a href=https://github.com/vitessio/vitess/pull/9915>mitigate</a> this problem, which worked … well enough for an MVP, but they weren&rsquo;t perfect, and required our proxies to leak details about gRPC internals in some cases.</p>
+<h3 id=problem-3-we-are-lying-to-you>Problem 3: We are Lying to You</h3>
+<p>I will admit this one is not a technical problem<sup id=fnref:3><a href=#fn:3 class=footnote-ref role=doc-noteref>3</a></sup>, <em>per se</em>, but falls within my endless crusade of &ldquo;words mean things.&rdquo;</p>
+<p><code>vtsql.DB</code> and <code>vtctldclient.Proxy</code> describe themselves <em>as proxies</em>.
+And in one sense, they are — they <em>do</em> sit between VTAdmin and another component, shuttling requests and responses back and forth.
+But, they are the thinnest proxies imaginable.</p>
+<p>They are really more of passthroughs than proxies, and, while having a passthrough is completely fine, and in many cases useful, <em>calling</em> a passthrough a proxy is confusing at best, and might create false expectations from both users and developers.</p>
+<h2 id=grpcresolver-api><code>grpc.Resolver</code> API</h2>
+<p>Luckily for us, gRPC has a (not widely-advertised<sup id=fnref:4><a href=#fn:4 class=footnote-ref role=doc-noteref>4</a></sup>) API to plug in your own mechanism for providing a list of addresses (a &ldquo;resolver&rdquo;) to a client connection (a <code>ClientConn</code>).
+gRPC will then use a second layer (a &ldquo;balancer&rdquo;; also pluggable, also not widely-advertised<sup id=fnref:4><a href=#fn:4 class=footnote-ref role=doc-noteref>4</a></sup>) to select one or more of those address to create actual, for-releasies <code>net.Conn</code> connections to (<code>SubConn</code>) and route RPCs to.</p>
+<p>gRPC&rsquo;s defaults are to use a resolver called <code>passthrough</code>, and a balancer called <code>pick_first</code>.
+The <code>pick_first</code> balancer (roughly) walks through the address list it gets from the resolver and creates a <code>SubConn</code> to the first address that successfully connects.
+All future RPCs are sent to that <code>SubConn</code>.
+You can also use a <a href=https://github.com/grpc/grpc/blob/master/doc/service_config.md>service config</a> to specify other load balancer policies, like <code>round_robin</code>, which does what it sounds like.</p>
+<p>But, we&rsquo;re not here to talk about balancers; we&rsquo;re here to talk about resolvers!
+Here&rsquo;s what that <code>passthrough</code> resolver does<sup id=fnref:5><a href=#fn:5 class=footnote-ref role=doc-noteref>5</a></sup>:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=color:#6272a4>// internal/resolver/passthrough/passthrough.go
+</span><span style=color:#6272a4></span>
+<span style=color:#ff79c6>import</span> <span style=color:#f1fa8c>&#34;google.golang.org/grpc/resolver&#34;</span>
+
+<span style=color:#8be9fd;font-style:italic>type</span> builder <span style=color:#8be9fd;font-style:italic>struct</span> {}
+
+<span style=color:#8be9fd;font-style:italic>func</span> (b <span style=color:#ff79c6>*</span>builder) <span style=color:#50fa7b>Scheme</span>() <span style=color:#8be9fd>string</span> { <span style=color:#ff79c6>return</span> <span style=color:#f1fa8c>&#34;passthrough&#34;</span> }
+
+<span style=color:#8be9fd;font-style:italic>func</span> (b <span style=color:#ff79c6>*</span>builder) <span style=color:#50fa7b>Build</span>(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, <span style=color:#8be9fd>error</span>) {
+    cc.<span style=color:#50fa7b>UpdateState</span>(resolver.State{
+        Addresses: []resolver.Address{{
+            Addr: target.Endpoint,
+        }},
+    })
+    <span style=color:#ff79c6>return</span> <span style=color:#ff79c6>&amp;</span>passthrough{}, <span style=color:#ff79c6>nil</span>
+}
+
+<span style=color:#8be9fd;font-style:italic>type</span> passthrough <span style=color:#8be9fd;font-style:italic>struct</span> {}
+
+<span style=color:#8be9fd;font-style:italic>func</span> (r <span style=color:#ff79c6>*</span>passthrough) <span style=color:#50fa7b>ResolveNow</span>(o resolver.ResolveNowOptions) {}
+<span style=color:#8be9fd;font-style:italic>func</span> (r <span style=color:#ff79c6>*</span>passthrough) <span style=color:#50fa7b>Close</span>() {}
+
+<span style=color:#8be9fd;font-style:italic>func</span> <span style=color:#50fa7b>init</span>() { resolver.<span style=color:#50fa7b>Register</span>(<span style=color:#ff79c6>&amp;</span>builder{}) }
+</code></pre></td></tr></table>
+</div>
+</div><p>There&rsquo;s a <a href=https://en.wikipedia.org/wiki/Builder_pattern>builder pattern</a> in play here.
+gRPC expects you to specify a registry of <code>resolver.Builder</code> implementations, either in a global registry via <code>resolver.Register</code> and per-connection, with the dial option <code>grpc.WithResolvers(...resolver.Builder)</code>.
+gRPC will determine the right kind of resolver to build for a given <code>ClientConn</code> at dial-time, based on the <a href=https://github.com/grpc/grpc/blob/master/doc/naming.md>naming scheme</a><sup id=fnref:6><a href=#fn:6 class=footnote-ref role=doc-noteref>6</a></sup> of the dial target.
+Dial targets are parsed as follows:</p>
+<pre tabindex=0><code>(&lt;scheme&gt;://)?(&lt;authority&gt;/)?&lt;endpoint&gt;
+</code></pre><p>If a scheme is specified, then the <code>resolver.Builder</code> registered for that scheme is used; otherwise gRPC will fallback to its default <code>passthrough</code> resolver.
+In addition, the parsed target gets passed to the <code>Builder.Build()</code> call, so the resolver can inspect its target if needed.</p>
+<p>After building a resolver for the target, gRPC wraps the <code>ClientConn</code> a bunch, to make a nice burrito of a <code>grpc.ClientConn</code> inside a <code>balancer.ClientConn</code> inside a <code>resolver.ClientConn</code><sup id=fnref:7><a href=#fn:7 class=footnote-ref role=doc-noteref>7</a></sup>.
+Then, for the life of the connection, gRPC will take different actions based on the connectivity state of the different <code>SubConn</code>s.
+The details don&rsquo;t matter for our purposes, beyond &ldquo;occasionally, <em>including on transient connection failures</em>, gRPC will request the resolver to re-resolve.&rdquo;
+This is when <code>ResolveNow</code> gets called.</p>
+<p>The contract here is that the resolver will then produce a new set of addresses, and communicate that back to the balancer via <code>cc.UpdateState</code>.
+After its state is updated by the resolver, the balancer can then create/destroy/reuse <code>SubConn(s)</code> as it sees fit, and communicate this back to the <code>grpc.ClientConn</code> via its own <code>cc.UpdateState</code> method call.</p>
+<hr>
+<p><em>Phew</em>.</p>
+<p>With all that preamble, let&rsquo;s return to the original problem.</p>
+<p>VTAdmin has these thin proxies, which use a <code>Discovery</code> interface to discover a <em>single</em> address to &ldquo;proxy&rdquo; to.
+They don&rsquo;t distribute load over the N hosts that they <em>could</em> have used, and furthermore have no way to inspect the connection state because that is internal to gRPC, so they can&rsquo;t discover different hosts on (permanent) &ldquo;transient&rdquo; failures.</p>
+<p>But, if we use the resolver APIs, we can write our own resolver that uses our <code>Discovery</code> interface under the hood to look up the most up-to-date set of addresses whenever gRPC decides it needs to refresh the addresses for a dial target!
+Then, balancing and connection management fall strictly under the purview of gRPC — which is more well-equipped to handle that anyway — and not VTAdmin.</p>
+<p>Let&rsquo;s get into it.</p>
+<h2 id=implementation>Implementation</h2>
+<p><a href=https://github.com/vitessio/vitess/pull/9977>Here</a> is a link to the PR with the full implementation.
+I&rsquo;ve omitted some details for brevity and clarity.</p>
+<h3 id=devising-a-scheme>Devising a scheme</h3>
+<p>The first thing we need to do is figure out how to make gRPC use our resolver.
+There&rsquo;s no way I could see to change the default resolver used by <code>grpc.Dial</code>, so we&rsquo;ll need to come up with our own URL scheme.</p>
+<p>We also want to use different resolvers for different clusters (since each cluster has its own discovery implementation).
+We already require clusters to have unique IDs, so we&rsquo;ll go ahead and just use the cluster ID as our scheme<sup id=fnref:8><a href=#fn:8 class=footnote-ref role=doc-noteref>8</a></sup>.</p>
+<p>Then, our <code>Dial</code>s go from using an <code>addr</code> that we get back from discovery to a somewhat magical string of <code>${clusterID}://${componentName}</code> (more on the component name in a bit).</p>
+<p>We do need to thread the cluster&rsquo;s discovery through to the resolvers used by both Vtctld and VTGate proxies, like so:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">28
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">29
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">30
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=color:#6272a4>// go/vt/vtadmin/cluster/resolver/resolver.go
+</span><span style=color:#6272a4></span><span style=color:#ff79c6>package</span> resolver
+
+<span style=color:#ff79c6>import</span> (
+    <span style=color:#f1fa8c>&#34;time&#34;</span>
+
+    grpcresolver <span style=color:#f1fa8c>&#34;google.golang.org/grpc/resolver&#34;</span>
+
+    <span style=color:#f1fa8c>&#34;vitess.io/vitess/go/vt/vtadmin/cluster/discovery&#34;</span>
+)
+
+<span style=color:#8be9fd;font-style:italic>type</span> Options <span style=color:#8be9fd;font-style:italic>struct</span> {
+    Discovery        discovery.Discovery
+    DiscoveryTags    []<span style=color:#8be9fd>string</span>
+    DiscoveryTimeout time.Duration
+}
+
+<span style=color:#8be9fd;font-style:italic>func</span> (opts <span style=color:#ff79c6>*</span>Options) <span style=color:#50fa7b>NewBuilder</span>(scheme <span style=color:#8be9fd>string</span>) grpcresolver.Builder {
+    <span style=color:#ff79c6>return</span> <span style=color:#ff79c6>&amp;</span>builder{
+        scheme: scheme,
+        opts:   <span style=color:#ff79c6>*</span>opts,
+    }
+}
+
+<span style=color:#6272a4>// go/vt/vtadmin/vtctldclient/proxy.go (and similar for vtsql/vtgate)
+</span><span style=color:#6272a4></span><span style=color:#8be9fd;font-style:italic>func</span> <span style=color:#50fa7b>New</span>(cfg <span style=color:#ff79c6>*</span>Config) <span style=color:#ff79c6>*</span>ClientProxy {
+    vtctld <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>&amp;</span>ClientProxy{
+        resolver: cfg.ResolverOptions.<span style=color:#50fa7b>NewBuilder</span>(cfg.Cluster.Id),
+    }
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>This ensures that each proxy (I&rsquo;m focusing on the Vtctld proxy, but the VTGate proxy is structurally identical) has a builder with the cluster ID as the scheme, as well as a reference to the <code>Discovery</code> implementation (via the <code>ResolverOptions</code>).
+The builder will hand that Discovery to the actual resolver at build-time:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=color:#8be9fd;font-style:italic>func</span> (b <span style=color:#ff79c6>*</span>builder) <span style=color:#50fa7b>Build</span>(target grpcresolver.Target, cc grpcresolver.ClientConn, opts grpcresolver.BuildOptions) (grpcresolver.Resolver, <span style=color:#8be9fd>error</span>) {
+    <span style=color:#8be9fd;font-style:italic>var</span> fn <span style=color:#8be9fd;font-style:italic>func</span>(context.Context, []<span style=color:#8be9fd>string</span>) ([]<span style=color:#8be9fd>string</span>, <span style=color:#8be9fd>error</span>)
+    <span style=color:#ff79c6>switch</span> target.URL.Host {
+    <span style=color:#ff79c6>case</span> <span style=color:#f1fa8c>&#34;vtctld&#34;</span>:
+        fn = b.opts.Discovery.DiscoverVtctldAddrs
+    <span style=color:#ff79c6>case</span> <span style=color:#f1fa8c>&#34;vtgate&#34;</span>:
+        fn = b.opts.Discovery.DiscoverVTGateAddrs
+    <span style=color:#ff79c6>default</span>:
+        <span style=color:#ff79c6>return</span> <span style=color:#ff79c6>nil</span>, fmt.<span style=color:#50fa7b>Errorf</span>(<span style=color:#f1fa8c>&#34;%s: unsupported URL host %s&#34;</span>, logPrefix, target.URL.Host)
+    }
+
+	ctx, cancel <span style=color:#ff79c6>:=</span> context.<span style=color:#50fa7b>WithCancel</span>(context.<span style=color:#50fa7b>Background</span>())
+
+	r <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>&amp;</span>resolver{
+        component:     target.URL.Host,
+        cluster:       target.URL.Scheme,
+        discoverAddrs: fn,
+        opts:          b.opts,
+        cc:            cc,
+        sc:            sc,
+        ctx:           ctx,
+        cancel:        cancel,
+        createdAt:     time.<span style=color:#50fa7b>Now</span>().<span style=color:#50fa7b>UTC</span>(),
+    }
+    r.<span style=color:#50fa7b>ResolveNow</span>(grpcresolver.ResolveNowOptions{})
+    <span style=color:#ff79c6>return</span> r, <span style=color:#ff79c6>nil</span>
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>As you can see, we&rsquo;re abusing the URL <code>Host</code> fragment (formerly &ldquo;authority&rdquo; in the gRPC name resolution spec) to switch between Vtctld and VTGate components.
+The only difference, functionally, is which discovery function we use, which gets set as the <code>fn</code> field in our built resolver.</p>
+<p>Then, the underlying Dial in the Vtctld proxy becomes:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go>dialOpts <span style=color:#ff79c6>:=</span> <span style=color:#8be9fd;font-style:italic>append</span>(vtctld.cfg.dialOpts, grpc.<span style=color:#50fa7b>WithResolvers</span>(vtctld.resolver))
+cc, err <span style=color:#ff79c6>:=</span> grpc.<span style=color:#50fa7b>Dial</span>(fmt.<span style=color:#50fa7b>Sprintf</span>(<span style=color:#f1fa8c>&#34;%s://vtctld/&#34;</span>, vtctld.cfg.Cluster.Id), dialOpts<span style=color:#ff79c6>...</span>)
+</code></pre></td></tr></table>
+</div>
+</div><h3 id=resolvenow>ResolveNow</h3>
+<p>Perhaps the nicest thing about this change is, after all that convoluted preparatory work, the actual guts of the resolver is an almost verbatim copy of the discovery bits that were formerly in the body of the <code>Dial</code> methods of our proxies.
+This time, instead of getting a single address and passing that to a <code>grpc.Dial</code> call, we instead get a <em>list</em> of addresses, and inform the wrapped <code>ClientConn</code> of the new address set.
+In code:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">28
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">29
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">30
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">31
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">32
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">33
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">34
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">35
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">36
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">37
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=color:#8be9fd;font-style:italic>func</span> (r <span style=color:#ff79c6>*</span>resolver) <span style=color:#50fa7b>ResolveNow</span>(o grpcresolver.ResolveNowOptions) {
+    state, err <span style=color:#ff79c6>:=</span> r.<span style=color:#50fa7b>resolve</span>()
+    <span style=color:#ff79c6>if</span> err <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+        r.cc.<span style=color:#50fa7b>ReportError</span>(err)
+        <span style=color:#ff79c6>return</span>
+    }
+
+    err = r.cc.<span style=color:#50fa7b>UpdateState</span>(<span style=color:#ff79c6>*</span>state)
+    <span style=color:#ff79c6>if</span> err <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+        r.cc.<span style=color:#50fa7b>ReportError</span>(err)
+        <span style=color:#ff79c6>return</span>
+    }
+}
+
+<span style=color:#8be9fd;font-style:italic>func</span> (r <span style=color:#ff79c6>*</span>resolver) <span style=color:#50fa7b>resolve</span>() (<span style=color:#ff79c6>*</span>grpcresolver.State, <span style=color:#8be9fd>error</span>) {
+    ctx, cancel <span style=color:#ff79c6>:=</span> context.<span style=color:#50fa7b>WithTimeout</span>(r.ctx, r.opts.DiscoveryTimeout)
+    <span style=color:#ff79c6>defer</span> <span style=color:#50fa7b>cancel</span>()
+
+    <span style=color:#6272a4>// Reminder: discoverAddrs is one of discovery.Discover(Vtctld|VTGate)Addrs.
+</span><span style=color:#6272a4></span>    <span style=color:#6272a4>// This was set in the `switch` block in builder.Build.
+</span><span style=color:#6272a4></span>    addrs, err <span style=color:#ff79c6>:=</span> r.<span style=color:#50fa7b>discoverAddrs</span>(ctx, r.opts.DiscoveryTags)
+	<span style=color:#ff79c6>if</span> err <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+		<span style=color:#ff79c6>return</span> <span style=color:#ff79c6>nil</span>, fmt.<span style=color:#50fa7b>Errorf</span>(<span style=color:#f1fa8c>&#34;failed to discover %ss (cluster %s): %w&#34;</span>, r.component, r.cluster, err)
+	}
+
+	state <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>&amp;</span>grpcresolver.State{
+		Addresses: <span style=color:#8be9fd;font-style:italic>make</span>([]grpcresolver.Address, <span style=color:#8be9fd;font-style:italic>len</span>(addrs)),
+	}
+
+	<span style=color:#ff79c6>for</span> i, addr <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> addrs {
+		state.Addresses[i] = grpcresolver.Address{
+			Addr: addr,
+		}
+	}
+
+	<span style=color:#ff79c6>return</span> state, <span style=color:#ff79c6>nil</span>
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>And that&rsquo;s pretty much it!
+This is a working implementation of a custom resolver, based on VTAdmin&rsquo;s cluster discovery interface.
+It handles ASG-cycling gracefully, and I think it&rsquo;s pretty neat!</p>
+<p>Everything else I want to talk about is extra considerations and future improvements.</p>
+<h3 id=debugdebuggable><code>debug.Debuggable</code></h3>
+<p>VTAdmin aims to be operator-friendly, and to that end, it includes some debug endpoints to inspect the state of VTAdmin itself.
+Here&rsquo;s how it works.</p>
+<p>First, we define a very small interface that any debuggable component will implement:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=color:#ff79c6>package</span> debug
+
+<span style=color:#8be9fd;font-style:italic>type</span> Debuggable <span style=color:#8be9fd;font-style:italic>interface</span> { <span style=color:#50fa7b>Debug</span>() <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]any }
+</code></pre></td></tr></table>
+</div>
+</div><p>This interface is implemented by <code>*cluster.Cluster</code>, as well as the Vtctld and VTGate proxies.
+VTAdmin then defines two http-only endpoints, <code>/debug/clusters/</code> and <code>/debug/cluster/${clusterID}</code>, whose handlers munge together all these maps into a JSON payload that operators can inspect.</p>
+<p>Here&rsquo;s a subset, as an example:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">28
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">29
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">30
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">31
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">32
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">33
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">34
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">35
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">36
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">37
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">38
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">39
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">40
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">41
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">42
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">43
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">44
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">45
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">46
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">47
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">48
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">49
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">50
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">51
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">52
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">53
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">54
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">55
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">56
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">57
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">58
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">59
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-json data-lang=json>{
+  <span style=color:#ff79c6>&#34;cluster&#34;</span>: {
+    <span style=color:#ff79c6>&#34;id&#34;</span>: <span style=color:#f1fa8c>&#34;local&#34;</span>,
+    <span style=color:#ff79c6>&#34;name&#34;</span>: <span style=color:#f1fa8c>&#34;local&#34;</span>
+  },
+  <span style=color:#ff79c6>&#34;config&#34;</span>: {
+    <span style=color:#ff79c6>&#34;ID&#34;</span>: <span style=color:#f1fa8c>&#34;local&#34;</span>,
+    <span style=color:#ff79c6>&#34;Name&#34;</span>: <span style=color:#f1fa8c>&#34;local&#34;</span>,
+    <span style=color:#ff79c6>&#34;DiscoveryImpl&#34;</span>: <span style=color:#f1fa8c>&#34;staticfile&#34;</span>,
+    <span style=color:#ff79c6>&#34;DiscoveryFlagsByImpl&#34;</span>: {
+      <span style=color:#ff79c6>&#34;staticfile&#34;</span>: {
+        <span style=color:#ff79c6>&#34;path&#34;</span>: <span style=color:#f1fa8c>&#34;./vtadmin/discovery.json&#34;</span>
+      }
+    },
+    <span style=color:#ff79c6>&#34;TabletFQDNTmplStr&#34;</span>: <span style=color:#f1fa8c>&#34;{{ .Tablet.Hostname }}:15{{ .Tablet.Alias.Uid }}&#34;</span>,
+    <span style=color:#ff79c6>&#34;VtSQLFlags&#34;</span>: {},
+    <span style=color:#ff79c6>&#34;VtctldFlags&#34;</span>: {},
+    <span style=color:#ff79c6>&#34;BackupReadPoolConfig&#34;</span>: <span style=color:#ff79c6>null</span>,
+    <span style=color:#ff79c6>&#34;SchemaReadPoolConfig&#34;</span>: <span style=color:#ff79c6>null</span>,
+    <span style=color:#ff79c6>&#34;TopoRWPoolConfig&#34;</span>: <span style=color:#ff79c6>null</span>,
+    <span style=color:#ff79c6>&#34;TopoReadPoolConfig&#34;</span>: <span style=color:#ff79c6>null</span>,
+    <span style=color:#ff79c6>&#34;WorkflowReadPoolConfig&#34;</span>: <span style=color:#ff79c6>null</span>
+  },
+  <span style=color:#ff79c6>&#34;pools&#34;</span>: {
+    <span style=color:#ff79c6>&#34;backup_read_pool&#34;</span>: {
+      <span style=color:#ff79c6>&#34;Capacity&#34;</span>: <span style=color:#bd93f9>500</span>,
+      <span style=color:#ff79c6>&#34;Available&#34;</span>: <span style=color:#bd93f9>500</span>,
+      <span style=color:#ff79c6>&#34;Active&#34;</span>: <span style=color:#bd93f9>500</span>,
+      <span style=color:#ff79c6>&#34;InUse&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;MaxCapacity&#34;</span>: <span style=color:#bd93f9>500</span>,
+      <span style=color:#ff79c6>&#34;WaitCount&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;WaitTime&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;IdleTimeout&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;IdleClosed&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;Exhausted&#34;</span>: <span style=color:#bd93f9>0</span>
+    },
+    <span style=color:#ff79c6>&#34;schema_read_pool&#34;</span>: {
+      <span style=color:#ff79c6>&#34;Capacity&#34;</span>: <span style=color:#bd93f9>500</span>,
+      <span style=color:#ff79c6>&#34;Available&#34;</span>: <span style=color:#bd93f9>500</span>,
+      <span style=color:#ff79c6>&#34;Active&#34;</span>: <span style=color:#bd93f9>500</span>,
+      <span style=color:#ff79c6>&#34;InUse&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;MaxCapacity&#34;</span>: <span style=color:#bd93f9>500</span>,
+      <span style=color:#ff79c6>&#34;WaitCount&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;WaitTime&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;IdleTimeout&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;IdleClosed&#34;</span>: <span style=color:#bd93f9>0</span>,
+      <span style=color:#ff79c6>&#34;Exhausted&#34;</span>: <span style=color:#bd93f9>0</span>
+    }, <span style=color:#6272a4>// more pools elided
+</span><span style=color:#6272a4></span>  },
+  <span style=color:#ff79c6>&#34;vtctld&#34;</span>: {
+    <span style=color:#ff79c6>&#34;dialed_at&#34;</span>: <span style=color:#f1fa8c>&#34;2022-04-15T11:31:14-04:00&#34;</span>,
+    <span style=color:#ff79c6>&#34;is_connected&#34;</span>: <span style=color:#ff79c6>true</span>
+  },
+  <span style=color:#ff79c6>&#34;vtsql&#34;</span>: {
+    <span style=color:#ff79c6>&#34;dialed_at&#34;</span>: <span style=color:#f1fa8c>&#34;2022-04-15T11:31:14-04:00&#34;</span>,
+    <span style=color:#ff79c6>&#34;is_connected&#34;</span>: <span style=color:#ff79c6>true</span>
+    }
+  }
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>Prior to the custom resolver, the proxies used to track which host they were connected to, as well as the last time they pinged that host as a crude healthcheck.
+The resolver vastly improved the stability of the API process, but as a result the discovery all happens in the background, completely opaquely to the proxies.
+This meant we lost that small, but useful, piece of introspection.</p>
+<p>That&rsquo;s okay though!
+If you recall back to how the proxies hook themselves into the resolver builders, they actually maintain a reference to the builder for that cluster scheme:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">5
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=color:#8be9fd;font-style:italic>func</span> <span style=color:#50fa7b>New</span>(cfg <span style=color:#ff79c6>*</span>Config) <span style=color:#ff79c6>*</span>ClientProxy {
+    vtctld <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>&amp;</span>ClientProxy{
+        resolver: cfg.ResolverOptions.<span style=color:#50fa7b>NewBuilder</span>(cfg.Cluster.Id),
+    }
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>This means that if we have our builder also implement <code>debug.Debuggable</code>, then we can update each proxy&rsquo;s <code>Debug()</code> method to merge those maps in to the final JSON payload.
+And that&rsquo;s exactly what we do:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">28
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">29
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">30
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">31
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">32
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">33
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">34
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">35
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">36
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">37
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">38
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-go data-lang=go><span style=color:#6272a4>// Debug implements debug.Debuggable for builder.
+</span><span style=color:#6272a4></span><span style=color:#8be9fd;font-style:italic>func</span> (b <span style=color:#ff79c6>*</span>builder) <span style=color:#50fa7b>Debug</span>() <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]any {
+    <span style=color:#6272a4>// I didn&#39;t show you this, but we also have the builder track the list of
+</span><span style=color:#6272a4></span>    <span style=color:#6272a4>// resolvers it&#39;s built, in order to support this.
+</span><span style=color:#6272a4></span>	resolvers <span style=color:#ff79c6>:=</span> <span style=color:#8be9fd;font-style:italic>make</span>([]<span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]any, <span style=color:#8be9fd;font-style:italic>len</span>(b.resolvers))
+	m <span style=color:#ff79c6>:=</span> <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]any{
+		<span style=color:#f1fa8c>&#34;scheme&#34;</span>:            b.scheme,
+		<span style=color:#f1fa8c>&#34;discovery_tags&#34;</span>:    b.opts.DiscoveryTags,
+		<span style=color:#f1fa8c>&#34;discovery_timeout&#34;</span>: b.opts.DiscoveryTimeout,
+		<span style=color:#f1fa8c>&#34;resolvers&#34;</span>:         resolvers,
+	}
+
+	<span style=color:#ff79c6>for</span> i, r <span style=color:#ff79c6>:=</span> <span style=color:#ff79c6>range</span> b.resolvers {
+		resolvers[i] = r.<span style=color:#50fa7b>Debug</span>()
+	}
+
+	<span style=color:#ff79c6>return</span> m
+}
+
+<span style=color:#6272a4>// Debug implements debug.Debuggable for resolver.
+</span><span style=color:#6272a4></span><span style=color:#8be9fd;font-style:italic>func</span> (r <span style=color:#ff79c6>*</span>resolver) <span style=color:#50fa7b>Debug</span>() <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]any {
+	m <span style=color:#ff79c6>:=</span> <span style=color:#8be9fd;font-style:italic>map</span>[<span style=color:#8be9fd>string</span>]any{
+		<span style=color:#f1fa8c>&#34;cluster&#34;</span>:    r.cluster,
+		<span style=color:#f1fa8c>&#34;component&#34;</span>:  r.component,
+		<span style=color:#f1fa8c>&#34;created_at&#34;</span>: debug.<span style=color:#50fa7b>TimeToString</span>(r.createdAt),
+		<span style=color:#f1fa8c>&#34;addr_list&#34;</span>:  r.lastAddrs,
+	}
+
+	<span style=color:#ff79c6>if</span> !r.lastResolvedAt.<span style=color:#50fa7b>IsZero</span>() {
+		m[<span style=color:#f1fa8c>&#34;last_resolved_at&#34;</span>] = debug.<span style=color:#50fa7b>TimeToString</span>(r.lastResolvedAt)
+	}
+
+	<span style=color:#ff79c6>if</span> r.lastResolveError <span style=color:#ff79c6>!=</span> <span style=color:#ff79c6>nil</span> {
+		m[<span style=color:#f1fa8c>&#34;error&#34;</span>] = r.lastResolveError.<span style=color:#50fa7b>Error</span>()
+	}
+
+	<span style=color:#ff79c6>return</span> m
+}
+</code></pre></td></tr></table>
+</div>
+</div><p><em>Now</em><sup id=fnref:9><a href=#fn:9 class=footnote-ref role=doc-noteref>9</a></sup>, hitting the <code>/debug/</code> endpoint for that cluster shows the resolver states:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">28
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">29
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">30
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">31
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">32
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">33
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">34
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">35
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">36
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">37
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">38
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">39
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">40
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">41
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">42
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">43
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">44
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">45
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">46
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">47
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">48
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">49
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">50
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">51
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">52
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">53
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">54
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">55
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">56
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">57
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">58
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">59
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-json data-lang=json>{
+  <span style=color:#ff79c6>&#34;cluster&#34;</span>: {...},
+  <span style=color:#ff79c6>&#34;config&#34;</span>: {...},
+  <span style=color:#ff79c6>&#34;pools&#34;</span>: {...},
+  <span style=color:#ff79c6>&#34;vtctld&#34;</span>: {
+    <span style=color:#ff79c6>&#34;dialed_at&#34;</span>: <span style=color:#f1fa8c>&#34;2022-04-15T11:31:14-04:00&#34;</span>,
+    <span style=color:#ff79c6>&#34;is_connected&#34;</span>: <span style=color:#ff79c6>true</span>,
+    <span style=color:#ff79c6>&#34;resolver&#34;</span>: {
+      <span style=color:#ff79c6>&#34;discovery_tags&#34;</span>: <span style=color:#ff79c6>null</span>,
+      <span style=color:#ff79c6>&#34;discovery_timeout&#34;</span>: <span style=color:#bd93f9>100000000</span>,
+      <span style=color:#ff79c6>&#34;resolvers&#34;</span>: [
+        {
+          <span style=color:#ff79c6>&#34;addr_list&#34;</span>: [
+            {
+              <span style=color:#ff79c6>&#34;Addr&#34;</span>: <span style=color:#f1fa8c>&#34;localhost:15999&#34;</span>,
+              <span style=color:#ff79c6>&#34;ServerName&#34;</span>: <span style=color:#f1fa8c>&#34;&#34;</span>,
+              <span style=color:#ff79c6>&#34;Attributes&#34;</span>: <span style=color:#ff79c6>null</span>,
+              <span style=color:#ff79c6>&#34;BalancerAttributes&#34;</span>: <span style=color:#ff79c6>null</span>,
+              <span style=color:#ff79c6>&#34;Type&#34;</span>: <span style=color:#bd93f9>0</span>,
+              <span style=color:#ff79c6>&#34;Metadata&#34;</span>: <span style=color:#ff79c6>null</span>
+            }
+          ],
+          <span style=color:#ff79c6>&#34;cluster&#34;</span>: <span style=color:#f1fa8c>&#34;local&#34;</span>,
+          <span style=color:#ff79c6>&#34;component&#34;</span>: <span style=color:#f1fa8c>&#34;vtctld&#34;</span>,
+          <span style=color:#ff79c6>&#34;created_at&#34;</span>: <span style=color:#f1fa8c>&#34;2022-04-15T15:31:14Z&#34;</span>,
+          <span style=color:#ff79c6>&#34;last_resolved_at&#34;</span>: <span style=color:#f1fa8c>&#34;2022-04-15T15:31:48Z&#34;</span>
+        }
+      ],
+      <span style=color:#ff79c6>&#34;scheme&#34;</span>: <span style=color:#f1fa8c>&#34;local&#34;</span>
+    }
+  },
+  <span style=color:#ff79c6>&#34;vtsql&#34;</span>: {
+    <span style=color:#ff79c6>&#34;dialed_at&#34;</span>: <span style=color:#f1fa8c>&#34;2022-04-15T11:31:14-04:00&#34;</span>,
+    <span style=color:#ff79c6>&#34;is_connected&#34;</span>: <span style=color:#ff79c6>true</span>,
+    <span style=color:#ff79c6>&#34;resolver&#34;</span>: {
+      <span style=color:#ff79c6>&#34;discovery_tags&#34;</span>: <span style=color:#ff79c6>null</span>,
+      <span style=color:#ff79c6>&#34;discovery_timeout&#34;</span>: <span style=color:#bd93f9>100000000</span>,
+      <span style=color:#ff79c6>&#34;resolvers&#34;</span>: [
+        {
+          <span style=color:#ff79c6>&#34;addr_list&#34;</span>: [
+            {
+              <span style=color:#ff79c6>&#34;Addr&#34;</span>: <span style=color:#f1fa8c>&#34;localhost:15991&#34;</span>,
+              <span style=color:#ff79c6>&#34;ServerName&#34;</span>: <span style=color:#f1fa8c>&#34;&#34;</span>,
+              <span style=color:#ff79c6>&#34;Attributes&#34;</span>: <span style=color:#ff79c6>null</span>,
+              <span style=color:#ff79c6>&#34;BalancerAttributes&#34;</span>: <span style=color:#ff79c6>null</span>,
+              <span style=color:#ff79c6>&#34;Type&#34;</span>: <span style=color:#bd93f9>0</span>,
+              <span style=color:#ff79c6>&#34;Metadata&#34;</span>: <span style=color:#ff79c6>null</span>
+            }
+          ],
+          <span style=color:#ff79c6>&#34;cluster&#34;</span>: <span style=color:#f1fa8c>&#34;local&#34;</span>,
+          <span style=color:#ff79c6>&#34;component&#34;</span>: <span style=color:#f1fa8c>&#34;vtgate&#34;</span>,
+          <span style=color:#ff79c6>&#34;created_at&#34;</span>: <span style=color:#f1fa8c>&#34;2022-04-15T15:31:14Z&#34;</span>,
+          <span style=color:#ff79c6>&#34;last_resolved_at&#34;</span>: <span style=color:#f1fa8c>&#34;2022-04-15T15:31:48Z&#34;</span>
+        }
+      ],
+      <span style=color:#ff79c6>&#34;scheme&#34;</span>: <span style=color:#f1fa8c>&#34;local&#34;</span>
+    }
+  }
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>Of course, all we can provide is the list of <em>potential</em> addresses; which one(s) gRPC has connection(s) to depends on the balancer policy used.
+Still, it&rsquo;s better than nothing, and I think the tradeoff of debuggability for reliability is worth it.</p>
+<h2 id=future-work>Future Work</h2>
+<p>While this is stable and working now, I also studied the implementation of the <a href=https://github.com/grpc/grpc-go/blob/3bf6719fc8ab5dac43b8494fcdc7e892efde6ea1/internal/resolver/dns/dns_resolver.go><code>dns</code> resolver in grpc-go</a>.
+Two things jumped out to me:</p>
+<ol>
+<li>The resolver continuously (on an interval) re-resolves the target <a href=https://github.com/grpc/grpc-go/blob/3bf6719fc8ab5dac43b8494fcdc7e892efde6ea1/internal/resolver/dns/dns_resolver.go#L152-L154>in a background goroutine</a>, and uses its <code>ResolveNow</code> method <em>only</em> to jump the interval wait time and trigger a re-resolution immediately.
+<ol>
+<li>(It&rsquo;s not strictly &ldquo;immediate&rdquo;, because it also enforces a minimum, non-configurable 30s wait between DNS lookups <a href=https://github.com/grpc/grpc-go/blob/3bf6719fc8ab5dac43b8494fcdc7e892efde6ea1/internal/resolver/dns/dns_resolver.go#L223-L224>&ldquo;to prevent constantly re-resolving&rdquo;</a>).</li>
+</ol>
+</li>
+<li>It <a href=https://github.com/grpc/grpc-go/blob/3bf6719fc8ab5dac43b8494fcdc7e892efde6ea1/internal/resolver/dns/dns_resolver.go#L234-L235>uses a backoff mechanism</a> to try to re-resolve when a DNS lookup fails, or if the call to <code>cc.UpdateState</code> fails, which can help in transient failure modes.</li>
+</ol>
+<p>I want both of these things for our discovery resolver, as I think they&rsquo;ll have a significant impact on reliability.
+What I&rsquo;d <em>really</em> like is for <code>grpc-go</code> to expose a different interface API that provides the scaffolding of &ldquo;background loop&rdquo; + &ldquo;(configurable) min-wait&rdquo; + &ldquo;backoff on failure&rdquo; + &ldquo;update state or report error&rdquo;, and you, as the consumer of this API provide a function that takes a <code>resolver.Target</code>, <code>resolver.BuildOptions</code>, and <code>resolver.ResolveNowOptions</code> and returns a <code>(*resolver.State, error)</code>.
+Failing that, I&rsquo;ll just have to copy-paste the guts of the DNS watcher loop and replace the <code>d.lookup()</code> call with our <code>r.resolve()</code> method.</p>
+<section class=footnotes role=doc-endnotes>
+<hr>
+<ol>
+<li id=fn:1 role=doc-endnote>
+<p>You can see me give an overview of VTAdmin at KubeCon 2021 <a href="https://youtu.be/uKdMR89mfdE?t=1014">here</a>.&#160;<a href=#fnref:1 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+<li id=fn:2 role=doc-endnote>
+<p>I&rsquo;m referring to <code>grpc-go</code> specifically here (and throughout the post), since Vitess, and by extension, <code>vtadmin-api</code> are written in Go. Different languages may have implementations that differ on this point.&#160;<a href=#fnref:2 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+<li id=fn:3 role=doc-endnote>
+<p>More accurately: it&rsquo;s more of a semantic issue than a technical problem, and the technical problems that <em>do</em> lie within the semantic issue are covered by the other problems discussed prior.&#160;<a href=#fnref:3 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+<li id=fn:4 role=doc-endnote>
+<p>In my opinion, which you are free to disagree with.&#160;<a href=#fnref:4 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+<li id=fn:5 role=doc-endnote>
+<p>This is not the actual code, which I have modified for both brevity and clarity.&#160;<a href=#fnref:5 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+<li id=fn:6 role=doc-endnote>
+<p>These docs are not actually accurate for <code>grpc-go</code>, which <a href=https://github.com/grpc/grpc-go/blob/3bf6719fc8ab5dac43b8494fcdc7e892efde6ea1/clientconn.go#L1574-L1578>defaults to the <code>passthrough</code> resolver</a> I&rsquo;ve been showing here. Of course, this ends up using various <code>net.Lookup</code> calls to turn non-IP addresses into IPs, but this happens during the creation of the HTTP transport, <em>not</em> at resolver-time. There&rsquo;s <em>also</em> a <a href=https://github.com/grpc/grpc-go/blob/3bf6719fc8ab5dac43b8494fcdc7e892efde6ea1/internal/resolver/dns/dns_resolver.go><code>dns</code> resolver</a> which does this at resolver-time and hands IP addresses back to the balancer.&#160;<a href=#fnref:6 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+<li id=fn:7 role=doc-endnote>
+<p>Or maybe it&rsquo;s a <a href=https://en.wikipedia.org/wiki/Turducken>conn-ducken</a>.&#160;<a href=#fnref:7 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+<li id=fn:8 role=doc-endnote>
+<p>In the spirit of completeness, since we are using the connection-local registry, we actually don&rsquo;t have to care about cross-cluster uniqueness in the URL scheme. We could instead have just used a scheme such as <code>vtadmin://</code> everywhere, but I didn&rsquo;t, so here we are.&#160;<a href=#fnref:8 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+<li id=fn:9 role=doc-endnote>
+<p>There&rsquo;s code changes required in the proxies that aren&rsquo;t very interesting. The one thing to note is that because we don&rsquo;t export the resolver type (because I wanted to have the proxies store an interface type, to support dependency injection for testability), we have to make a type assertion before adding the debug info. <a href=https://github.com/vitessio/vitess/blob/ef7363e918e5c7093d72f15471f4c0d408ac0d10/go/vt/vtadmin/vtctldclient/proxy.go#L178-L204>Here</a> is the Vtctld version.&#160;<a href=#fnref:9 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+</ol>
+</section>
+</article>
+</div>
+<footer>
+&copy; Andrew Mason 2025
+&nbsp;
+<a href=https://twitter.com/andrew_mason1 target=_blank>@andrew_mason1</a>
+</footer>
+</body>
+</html>

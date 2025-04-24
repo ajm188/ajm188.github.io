@@ -1,0 +1,378 @@
+<!doctype html><html class=no-js lang=en>
+<head>
+<meta charset=utf-8>
+<meta http-equiv=x-ua-compatible content="IE=edge,chrome=1">
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=description content>
+<link type=text/plain rel=author href=/humans.txt>
+<title>Home: Literate Conway</title>
+<link rel=canonical href=https://a.ndrw.dev/posts/literate-conway/>
+<link rel="shortcut icon" href=/favicon.ico><link rel=stylesheet href=https://a.ndrw.dev/css/fontawesome.min.85a136712bb18ba2ee6cd5375b6f14d9bbd245281518f2c68285053d9d0bb46d.css integrity="sha256-haE2cSuxi6LubNU3W28U2bvSRSgVGPLGgoUFPZ0LtG0="><link rel=stylesheet href=https://a.ndrw.dev/css/simplecss.min.0f03a309674cd62af1eecbaf9802cd4c6b7a1a87e842012262e6f5dccd49ed2a.css integrity="sha256-DwOjCWdM1irx7suvmALNTGt6GofoQgEiYub13M1J7So=">
+<style>.time{font-style:oblique}a.fa{text-decoration:none;line-height:2}article h1 span{font-size:80%;font-weight:lighter;font-style:oblique;display:block}pre{word-wrap:normal;white-space:pre}code{font-size:.9em}pre code{color:#ddd}</style>
+</head>
+<body>
+<div>
+<header>
+<nav>
+<a href=https://a.ndrw.dev>Home</a>
+<a href=https://a.ndrw.dev/about/>About</a>
+<a href=https://a.ndrw.dev/posts/>Posts</a>
+<a href=https://a.ndrw.dev/projects/>Projects</a>
+&nbsp;
+<a href=/posts/index.xml class="fa fa-rss" target=_blank></a>
+<a class="fa fa-brands fa-github" style=height:max-content href=https://github.com/ajm188 target=_blank></a>
+<a class="fa fa-brands fa-bluesky" href=https://bsky.app/profile/amason.bsky.social target=_blank></a>
+</nav>
+</header>
+<article>
+<h1>Literate Conway</h1>
+<div class=time>Sunday, June 12, 2016</div>
+<p>About a month ago, I sat down to write a Haskell implementation of
+<a href="https://en.wikipedia.org/wiki/Conway's_Game_of_Life">Conway&rsquo;s Game of Life</a>.</p>
+<p>Taking a literate programming approach, let&rsquo;s walk through my solution.</p>
+<p>First things first, let&rsquo;s make a Cell type:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#ff79c6>type</span> <span style=color:#8be9fd>Cell</span> <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>Bool</span>
+</code></pre></td></tr></table>
+</div>
+</div><p>This is nothing more than a simple type alias. The Bool type is a natural way
+to represent the cell, with live cells being True and dead cells being False.
+However, this definition allows us to define functions which operate on Cells
+rather than Bools, which will make the rest of the program much clearer in its
+intentions.</p>
+<p>Next, we will need a function to handle the state transition of a single cell,
+given its neighbors. In Haskell types, we want:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>next</span> <span style=color:#ff79c6>::</span> <span style=color:#8be9fd>Cell</span> <span style=color:#ff79c6>-&gt;</span> [<span style=color:#8be9fd>Cell</span>] <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Cell</span>
+</code></pre></td></tr></table>
+</div>
+</div><p>That is, <code>next</code> is a function which takes a Cell and a list of its neighbors
+and returns what the Cell should be in the next state of the world.</p>
+<p>The rules<sup id=fnref:1><a href=#fn:1 class=footnote-ref role=doc-noteref>1</a></sup> say:</p>
+<blockquote>
+<p>At each step in time, the following transitions occur:</p>
+<ol>
+<li>Any live cell with fewer than two live neighbours dies, as if caused by
+under-population.</li>
+<li>Any live cell with two or three live neighbours lives on to the next
+generation.</li>
+<li>Any live cell with more than three live neighbours dies, as if by
+over-population.</li>
+<li>Any dead cell with exactly three live neighbours becomes a live cell,
+as if by reproduction.</li>
+</ol>
+</blockquote>
+<p>Since we have completely orthogonal rules for how live cells and dead cells
+transition, we can write two definitions for the <code>next</code> function. First, we
+will write the simpler case — the definition for the dead cell.</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>next</span> <span style=color:#8be9fd>False</span> neighbors
+    <span style=color:#ff79c6>|</span> liveCount neighbors <span style=color:#ff79c6>==</span> <span style=color:#bd93f9>3</span> <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>True</span>
+    <span style=color:#ff79c6>|</span> otherwise                <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span>
+</code></pre></td></tr></table>
+</div>
+</div><p>This is almost verbatim from the fourth bullet point from Wikipedia, so let&rsquo;s
+move on to the definition of <code>liveCount</code>, which should return the number of
+Cells that are alive in a list. Since Cell is just an alias for Bool, we can
+filter out all of the dead cells by using <code>filter</code> in conjuction with <code>id</code>. So,
+to get the sublist of cells that are alive, we simply:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>liveCells</span> <span style=color:#ff79c6>::</span> [<span style=color:#8be9fd>Cell</span>] <span style=color:#ff79c6>-&gt;</span> [<span style=color:#8be9fd>Cell</span>]
+<span style=color:#50fa7b>liveCells</span> cells <span style=color:#ff79c6>=</span> filter id cells
+</code></pre></td></tr></table>
+</div>
+</div><p>Notice that the single argument to liveCells appears only as the last variable
+in the function definition. We can take advantage of Haskell&rsquo;s currying, by
+modifying our function like so:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>liveCells</span> <span style=color:#ff79c6>::</span> ([<span style=color:#8be9fd>Cell</span>] <span style=color:#ff79c6>-&gt;</span> [<span style=color:#8be9fd>Cell</span>]) <span style=color:#6272a4>-- parentheses are mandatory here!</span>
+<span style=color:#50fa7b>liveCells</span> <span style=color:#ff79c6>=</span> filter id
+</code></pre></td></tr></table>
+</div>
+</div><p>This is called Point-Free Style (PFS). It is point-free because we have written
+the function without referring to its argument, or its &ldquo;point.&rdquo;</p>
+<p>Now that we have defined <code>liveCells</code>, all <code>liveCount</code> needs to do is return the
+length of the list returned by <code>liveCells</code>. In code:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>liveCount</span> cells <span style=color:#ff79c6>=</span> count <span style=color:#ff79c6>$</span> liveCells cells
+</code></pre></td></tr></table>
+</div>
+</div><p>To simplify this a little, I&rsquo;m going to remove the <code>liveCells</code> function
+entirely and just use its body. Therefore:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>liveCount</span> cells <span style=color:#ff79c6>=</span> count <span style=color:#ff79c6>$</span> filter id cells
+</code></pre></td></tr></table>
+</div>
+</div><p>Now, with one small tweak, we can write <code>liveCount</code> in PFS as well. We will use
+the function composition operator (in Haskell, this is a &ldquo;.") like so:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>liveCount</span> <span style=color:#ff79c6>::</span> ([<span style=color:#8be9fd>Cell</span>] <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span>)
+<span style=color:#50fa7b>liveCount</span> <span style=color:#ff79c6>=</span> count <span style=color:#ff79c6>.</span> filter id
+</code></pre></td></tr></table>
+</div>
+</div><p>This is what function composition looks like in Haskell. If this is new to you,
+let me provide an example, in pseudo-Haskell:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>h</span> <span style=color:#ff79c6>=</span> f <span style=color:#ff79c6>.</span> g
+<span style=color:#50fa7b>h</span>(x) <span style=color:#ff79c6>==</span> f(g(x))
+</code></pre></td></tr></table>
+</div>
+</div><p>After that lengthy digression, let&rsquo;s now define the <code>next</code> function for live
+cells. There are three rules, so we will need a few more guard clauses than
+before:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">4
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>next</span> <span style=color:#8be9fd>False</span> neighbors
+    <span style=color:#ff79c6>|</span> liveCount neighbors <span style=color:#ff79c6>&lt;</span> <span style=color:#bd93f9>2</span>                              <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span>
+    <span style=color:#ff79c6>|</span> liveCount neighbors <span style=color:#ff79c6>==</span> <span style=color:#bd93f9>2</span> <span style=color:#ff79c6>||</span> liveCount neighbors <span style=color:#ff79c6>==</span> <span style=color:#bd93f9>3</span> <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>True</span>
+    <span style=color:#ff79c6>|</span> otherwise                                            <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span>
+</code></pre></td></tr></table>
+</div>
+</div><p>The final rule collapses into the default guard clause, so it does not
+explicitly appear in the definition. For the sake of clarity, we will assume
+that the Haskell compiler is smart enough to optimize away the repeated
+computations of the live neighbor count.</p>
+<p>Now that we have finished handling the transition of a single cell, we need to
+transition the entire world.</p>
+<p>Before we can do that, though, we need to be able to represent the world, which
+in our case is a two dimensional array. Now, we <em>could</em> represent this using
+vanilla nested lists (<code>[[Cell]]</code>). However, this will likely make the code much
+more confusing, and also possibly slower, since we will have to traverse the
+same lists over and over. Instead, we will use a package from the Hackage
+repositories. You can install it with <a href=https://www.haskell.org/cabal/>cabal</a>.
+Simply <code>cabal install matrix</code>. Now we can represent the world as a Matrix,
+which we can access by row and column.</p>
+<p>We need a function that does a step of the entire world in one fell swoop. We
+are going to define our function to be:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#ff79c6>import</span> Data.Matrix
+<span style=color:#50fa7b>step</span> <span style=color:#ff79c6>::</span> <span style=color:#8be9fd>Matrix</span> <span style=color:#8be9fd>Cell</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Matrix</span> <span style=color:#8be9fd>Cell</span>
+</code></pre></td></tr></table>
+</div>
+</div><p>The first thing we need to be able to do is get a list of a cell&rsquo;s neighbors,
+given its position in the world (or The Matrix, if your name is Neo).</p>
+<p>First, let&rsquo;s define a function that returns a list of coordinates (tuples) of
+all neighboring positions (including the origin position, for simplicity of
+expression):</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>allNeighborCoordinates</span> <span style=color:#ff79c6>::</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> [(<span style=color:#8be9fd>Int</span>, <span style=color:#8be9fd>Int</span>)]
+<span style=color:#50fa7b>allNeighborCoordinates</span> row col <span style=color:#ff79c6>=</span> [(row <span style=color:#ff79c6>+</span> r, col <span style=color:#ff79c6>+</span> c) <span style=color:#ff79c6>|</span> r <span style=color:#ff79c6>&lt;-</span> [<span style=color:#ff79c6>-</span><span style=color:#bd93f9>1</span><span style=color:#ff79c6>..</span><span style=color:#bd93f9>1</span>], c <span style=color:#ff79c6>&lt;-</span> [<span style=color:#ff79c6>-</span><span style=color:#bd93f9>1</span><span style=color:#ff79c6>..</span><span style=color:#bd93f9>1</span>]]
+</code></pre></td></tr></table>
+</div>
+</div><p>This will return all the adjacent coordinates, including ones that may not even
+be in the world! For example, <code>allNeighborCoordinates 0 0</code> will include the
+coordinate (-1, -1). We need to filter these out, along with the origin
+coordinate that will be in the list as well.</p>
+<p>Let&rsquo;s define a function that will determine if a coordinate is valid as a
+neighbor:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">6
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>validNeighborCoordinate</span> <span style=color:#ff79c6>::</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> (<span style=color:#8be9fd>Int</span>, <span style=color:#8be9fd>Int</span>) <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Bool</span>
+<span style=color:#50fa7b>validNeighborCoordinate</span> r0 c0 rmax cmax (x, y)
+    <span style=color:#ff79c6>|</span> x <span style=color:#ff79c6>==</span> r0 <span style=color:#ff79c6>&amp;&amp;</span> y <span style=color:#ff79c6>==</span> c0 <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span> <span style=color:#6272a4>-- rule out the origin point</span>
+    <span style=color:#ff79c6>|</span> x <span style=color:#ff79c6>&lt;</span> <span style=color:#bd93f9>1</span> <span style=color:#ff79c6>||</span> x <span style=color:#ff79c6>&gt;</span> rmax  <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span> <span style=color:#6272a4>-- check that the x-coordinate is in range</span>
+    <span style=color:#ff79c6>|</span> y <span style=color:#ff79c6>&lt;</span> <span style=color:#bd93f9>1</span> <span style=color:#ff79c6>||</span> y <span style=color:#ff79c6>&gt;</span> cmax  <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span> <span style=color:#6272a4>-- check that the y-coordinate is in range</span>
+    <span style=color:#ff79c6>|</span> otherwise          <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>True</span>
+</code></pre></td></tr></table>
+</div>
+</div><p>The order of arguments is actually important here, for a reason we will see in
+just a moment. Now we can define the <code>neighborsOf</code> function:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">6
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#6272a4>-- getElem is defined in the Data.Matrix module</span>
+<span style=color:#50fa7b>neighborsOf</span> <span style=color:#ff79c6>::</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Matrix</span> <span style=color:#8be9fd>Cell</span> <span style=color:#ff79c6>-&gt;</span> [<span style=color:#8be9fd>Cell</span>]
+<span style=color:#50fa7b>neighborsOf</span> r0 c0 rmax cmax world <span style=color:#ff79c6>=</span>
+    map (<span style=color:#50fa7b>\</span>(x, y) <span style=color:#ff79c6>-&gt;</span> getElem x y world) <span style=color:#ff79c6>$</span>
+        filter (validNeighborCoordinate r0 c0 rmax cmax) <span style=color:#ff79c6>$</span>
+        allNeighborCoordinates r0 c0
+</code></pre></td></tr></table>
+</div>
+</div><p>Notice how having the coordinate tuple as the last argument to
+<code>validNeighborCoordinate</code> allows us to more easily use it with <code>filter</code>, rather
+than having to define an inline lambda. This has no real advantage as far as I
+know, though, other than I like it better and think it looks prettier.</p>
+<p>We have done enough set up work that we can define the <code>step</code> function. I want
+to call attention to the <code>mapRow</code> function defined in the <code>Data.Matrix</code> module
+as so:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">4
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>mapRow</span> <span style=color:#ff79c6>::</span> (<span style=color:#8be9fd>Int</span> <span style=color:#ff79c6>-&gt;</span> a <span style=color:#ff79c6>-&gt;</span> a) <span style=color:#6272a4>-- function takes the current column as an additional argument</span>
+       <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Int</span>             <span style=color:#6272a4>-- row index to map</span>
+       <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Matrix</span> a
+       <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Matrix</span> a
+</code></pre></td></tr></table>
+</div>
+</div><p>This function transforms a single row in the matrix and returns the entire
+matrix but with that row changed. So, we can move one row at a time, folding on
+the intermediate matrices as we go. The only trick is that we want all of the
+neighbor computations to be based on the original matrix, not any of the
+intermediate states.</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">28
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">29
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-haskell data-lang=haskell><span style=color:#50fa7b>step</span> <span style=color:#ff79c6>::</span> <span style=color:#8be9fd>Matrix</span> <span style=color:#8be9fd>Cell</span> <span style=color:#ff79c6>-&gt;</span> <span style=color:#8be9fd>Matrix</span> <span style=color:#8be9fd>Cell</span> <span style=color:#6272a4>-- as a reminder</span>
+<span style=color:#50fa7b>step</span> world <span style=color:#ff79c6>=</span>
+    foldl
+        (<span style=color:#50fa7b>\</span>(intermediate row) <span style=color:#ff79c6>-&gt;</span>
+            mapRow (<span style=color:#50fa7b>\</span>(col cell) <span style=color:#ff79c6>-&gt;</span>
+                next cell (neighborsOf row col)) row intermediate)
+        world
+        [<span style=color:#bd93f9>1</span><span style=color:#ff79c6>..</span>rmax]
+    <span style=color:#ff79c6>where</span> rmax <span style=color:#ff79c6>=</span> nrows world
+          cmax <span style=color:#ff79c6>=</span> ncols world
+          <span style=color:#6272a4>-- below we bring in the functions we defined earlier, but we can</span>
+          <span style=color:#6272a4>-- take advantage of the fact that rmax/cmax are in scope, so we no</span>
+          <span style=color:#6272a4>-- longer need to take them as arguments.</span>
+
+          allNeighborCoordinates row col <span style=color:#ff79c6>=</span> [(row <span style=color:#ff79c6>+</span> r, col <span style=color:#ff79c6>+</span> c) <span style=color:#ff79c6>|</span> r <span style=color:#ff79c6>&lt;-</span> [<span style=color:#ff79c6>-</span><span style=color:#bd93f9>1</span><span style=color:#ff79c6>..</span><span style=color:#bd93f9>1</span>], c <span style=color:#ff79c6>&lt;-</span> [<span style=color:#ff79c6>-</span><span style=color:#bd93f9>1</span><span style=color:#ff79c6>..</span><span style=color:#bd93f9>1</span>]]
+
+          <span style=color:#6272a4>-- also note that these functions operate on the original &#39;world&#39;</span>
+          <span style=color:#6272a4>-- argument, so the neighbor counts are consistent.</span>
+
+          neighborsOf row col <span style=color:#ff79c6>=</span>
+            map (<span style=color:#50fa7b>\</span>(x, y) <span style=color:#ff79c6>-&gt;</span> getElem x y world) <span style=color:#ff79c6>$</span>
+                filter (validNeighborCoordinate r c) <span style=color:#ff79c6>$</span>
+                allNeighborCoords r c
+          validNeighborCoordinate r0 c0 (x, y)
+            <span style=color:#ff79c6>|</span> x <span style=color:#ff79c6>==</span> r0 <span style=color:#ff79c6>&amp;&amp;</span> y <span style=color:#ff79c6>==</span> c0 <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span>
+            <span style=color:#ff79c6>|</span> x <span style=color:#ff79c6>&lt;</span> <span style=color:#bd93f9>1</span> <span style=color:#ff79c6>||</span> x <span style=color:#ff79c6>&gt;</span> rmax  <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span>
+            <span style=color:#ff79c6>|</span> y <span style=color:#ff79c6>&lt;</span> <span style=color:#bd93f9>1</span> <span style=color:#ff79c6>||</span> y <span style=color:#ff79c6>&gt;</span> cmax  <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>False</span>
+            <span style=color:#ff79c6>|</span> otherwise          <span style=color:#ff79c6>=</span> <span style=color:#8be9fd>True</span>
+
+</code></pre></td></tr></table>
+</div>
+</div><p>With that, we have a complete implementation of Conway&rsquo;s Game of Life.</p>
+<p>There is a complete version <a href=https://github.com/ajm188/conway>on my GitHub</a>.
+There is some minor renaming in an effort to keep some of the lines shorter,
+but beyond that the code is the same. It also includes some code to handle
+displaying the world on each iteration, which you will probably be interested
+in at some point.</p>
+<p>Thanks for following along! Drop me a line if you have any questions or
+feedback.</p>
+<section class=footnotes role=doc-endnotes>
+<hr>
+<ol>
+<li id=fn:1 role=doc-endnote>
+<p><a href=https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life#Rules>https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life#Rules</a>&#160;<a href=#fnref:1 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+</ol>
+</section>
+</article>
+</div>
+<footer>
+&copy; Andrew Mason 2025
+&nbsp;
+<a href=https://twitter.com/andrew_mason1 target=_blank>@andrew_mason1</a>
+</footer>
+</body>
+</html>

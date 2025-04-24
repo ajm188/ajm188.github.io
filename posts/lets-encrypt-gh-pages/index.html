@@ -1,0 +1,447 @@
+<!doctype html><html class=no-js lang=en>
+<head>
+<meta charset=utf-8>
+<meta http-equiv=x-ua-compatible content="IE=edge,chrome=1">
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=description content>
+<link type=text/plain rel=author href=/humans.txt>
+<title>Home: Let's Encrypt This Blog</title>
+<link rel=canonical href=https://a.ndrw.dev/posts/lets-encrypt-gh-pages/>
+<link rel="shortcut icon" href=/favicon.ico><link rel=stylesheet href=https://a.ndrw.dev/css/fontawesome.min.85a136712bb18ba2ee6cd5375b6f14d9bbd245281518f2c68285053d9d0bb46d.css integrity="sha256-haE2cSuxi6LubNU3W28U2bvSRSgVGPLGgoUFPZ0LtG0="><link rel=stylesheet href=https://a.ndrw.dev/css/simplecss.min.0f03a309674cd62af1eecbaf9802cd4c6b7a1a87e842012262e6f5dccd49ed2a.css integrity="sha256-DwOjCWdM1irx7suvmALNTGt6GofoQgEiYub13M1J7So=">
+<style>.time{font-style:oblique}a.fa{text-decoration:none;line-height:2}article h1 span{font-size:80%;font-weight:lighter;font-style:oblique;display:block}pre{word-wrap:normal;white-space:pre}code{font-size:.9em}pre code{color:#ddd}</style>
+</head>
+<body>
+<div>
+<header>
+<nav>
+<a href=https://a.ndrw.dev>Home</a>
+<a href=https://a.ndrw.dev/about/>About</a>
+<a href=https://a.ndrw.dev/posts/>Posts</a>
+<a href=https://a.ndrw.dev/projects/>Projects</a>
+&nbsp;
+<a href=/posts/index.xml class="fa fa-rss" target=_blank></a>
+<a class="fa fa-brands fa-github" style=height:max-content href=https://github.com/ajm188 target=_blank></a>
+<a class="fa fa-brands fa-bluesky" href=https://bsky.app/profile/amason.bsky.social target=_blank></a>
+</nav>
+</header>
+<article>
+<h1>Let's Encrypt This Blog<span>Setting Up HTTPS on GitHub Pages</span></h1>
+<div class=time>Monday, March 13, 2017</div>
+<h2 id=disclaimer>Disclaimer</h2>
+<p>First things first, I need to tell you something.
+For most use cases, the following is going to be unnecessary.
+If all you want is a blog with the green padlock, maybe with a custom domain, and you&rsquo;re not a masochist, this post is likely useless to you.
+GitHub pages gives you HTTPS for free.
+Spend your time reading something more valuable.</p>
+<h2 id=initial-setup>Initial Setup</h2>
+<p>However, I am a masochist.
+Or, maybe I&rsquo;m thinking ahead to future use cases.
+I have a <a href=https://m.do.co/c/65ed942945d1>DigitalOcean</a> droplet (yes, that&rsquo;s my referral link) which runs an <a href=https://www.nginx.com>nginx</a> reverse proxy.
+The droplet lives at <a href=https://fixedpoint.xyz>fixedpoint.xyz</a>.
+I also have a CNAME pointing <a href=http://www.fixedpoint.xyz>www.fixedpoint.xyz</a> to my GitHub pages domain (that is, <a href=http://ajm188.github.io>ajm188.github.io</a>).</p>
+<p>Why would I do something like this?
+Because I can.
+Also, I could in theory add dynamic content to my site, while still having GitHub serve all the static content.
+All it would take is a service running on the droplet and a small tweak to the nginx config.
+Speaking of, my nginx config at this point looked something like:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-nginx data-lang=nginx><span style=color:#ff79c6>server</span> {
+    <span style=color:#ff79c6>listen</span> <span style=color:#bd93f9>80</span>;
+    <span style=color:#ff79c6>listen</span> <span style=color:#f1fa8c>[::]:80</span>;
+
+    <span style=color:#ff79c6>server_name</span> <span style=color:#f1fa8c>fixedpoint.xyz</span>;
+
+    <span style=color:#ff79c6>location</span> ~ <span style=color:#f1fa8c>/(.*)</span> {
+        <span style=color:#ff79c6>resolver</span> <span style=color:#bd93f9>127</span><span style=color:#f1fa8c>.0.0.1</span>;
+        <span style=color:#ff79c6>proxy_pass</span> <span style=color:#f1fa8c>http://www.fixedpoint.xyz/</span><span style=color:#8be9fd;font-style:italic>$1$is_args$args</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Real-IP</span> <span style=color:#8be9fd;font-style:italic>$remote_addr</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Forwarded-For</span> <span style=color:#8be9fd;font-style:italic>$proxy_add_x_forwarded_for</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Host</span> <span style=color:#8be9fd;font-style:italic>$server_name</span>;
+    }
+}
+</code></pre></td></tr></table>
+</div>
+</div><h3 id=whats-with-the-resolver-line>What&rsquo;s with the resolver line?</h3>
+<p>Good question.
+That tells nginx to talk to my local <code>dnsmasq</code> to get the IP address of <a href=http://www.fixedpoint.xyz>www.fixedpoint.xyz</a>.
+GitHub doesn&rsquo;t guarantee that your Pages site will stay at a fixed IP forever.
+That would be bad.
+GitHub does some fancy magic on their end to move your site around as dictated by the needs of their infrastructure.
+So, we need nginx to reresolve the DNS entry whenever GitHub moves your site.</p>
+<h2 id=lets-encrypt>Let&rsquo;s Encrypt!</h2>
+<h3 id=getting-started>Getting Started</h3>
+<p>Time to get started.
+<a href=https://letsencrypt.org/getting-started/>Let&rsquo;s Encrypt</a> provides a &ldquo;Getting Started&rdquo; guide.
+This points you to the <a href=https://certbot.eff.org>certbot</a> website, which instructs you to specify various parts of your tech stack.
+In my case, I ended up <a href=https://certbot.eff.org/#ubuntuxenial-nginx>here</a>.
+I decided to use the webroot plugin, rather than &ldquo;standalone&rdquo; instructions.
+The webroot instructions seemed far simpler.
+So, I did:</p>
+<div class=highlight><pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-bash data-lang=bash>letsencrypt certonly --webroot -w /var/www/fixedpoint -d fixedpoint.xyz -d www.fixedpoint.xyz
+</code></pre></div><p>And it failed!</p>
+<p><code>letsencrypt</code> was complaining about the <code>/var/www/fixedpoint</code> directory not existing.
+No problem.
+After making the missing directory, I reran the <code>letsencrypt</code> command.</p>
+<p>And it failed again!</p>
+<h3 id=whose-domain-is-it-anyway>Whose Domain is it Anyway?</h3>
+<p>This time the problem looked something like the following.
+Note that I grabbed this from google, since I didn&rsquo;t capture the error message at the time.
+I did change the domains to reflect my actual domain and subdomain, though.</p>
+<pre tabindex=0><code>Failed authorization procedure. fixedpoint.xyz (http-01):
+    urn:acme:error:unauthorized ::
+    The client lacks sufficient authorization ::
+    Invalid response from http://fixedpoint.xyz/.well-known/acme-challenge/789[...]eSA [255.255.255.255]: 404
+
+Failed authorization procedure. www.fixedpoint.xyz (http-01):
+    urn:acme:error:unauthorized ::
+    The client lacks sufficient authorization ::
+    Invalid response from http://www.fixedpoint.xyz/.well-known/acme-challenge/789[...]eSA [255.255.255.255]: 404
+
+IMPORTANT NOTES:
+ - The following 'urn:acme:error:unauthorized' errors were reported by
+   the server:
+
+   Domains: fixedpoint.xyz www.fixedpoint.xyz
+   Error: The client lacks sufficient authorization
+</code></pre><p>What&rsquo;s going on here?
+Well, you can&rsquo;t get a cert for just any old domain.
+You can only get one for a domain that you actually own!
+Makes sense to me.</p>
+<p>Turns out this &ldquo;acme challenge&rdquo; thing is one way to prove you own a domain.
+After a bit of googling, I settled on the following nginx config:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-nginx data-lang=nginx><span style=color:#ff79c6>server</span> {
+    <span style=color:#ff79c6>listen</span> <span style=color:#bd93f9>80</span>;
+    <span style=color:#ff79c6>listen</span> <span style=color:#f1fa8c>[::]:80</span>;
+
+    <span style=color:#ff79c6>server_name</span> <span style=color:#f1fa8c>fixedpoint.xyz</span>;
+
+    <span style=color:#ff79c6>root</span> <span style=color:#f1fa8c>/var/www/fixedpoint</span>;
+
+    <span style=color:#ff79c6>location</span> ~ <span style=color:#f1fa8c>/.well-known/acme-challenge/(.*)</span> {
+        <span style=color:#ff79c6>allow</span> <span style=color:#f1fa8c>all</span>;
+    }
+
+    <span style=color:#ff79c6>location</span> ~ <span style=color:#f1fa8c>/(.*)</span> {
+        <span style=color:#ff79c6>resolver</span> <span style=color:#bd93f9>127</span><span style=color:#f1fa8c>.0.0.1</span>;
+        <span style=color:#ff79c6>proxy_pass</span> <span style=color:#f1fa8c>http://www.fixedpoint.xyz/</span><span style=color:#8be9fd;font-style:italic>$1$is_args$args</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Real-IP</span> <span style=color:#8be9fd;font-style:italic>$remote_addr</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Forwarded-For</span> <span style=color:#8be9fd;font-style:italic>$proxy_add_x_forwarded_for</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Host</span> <span style=color:#8be9fd;font-style:italic>$server_name</span>;
+    }
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>We made a couple of notable changes here.</p>
+<ul>
+<li><code>root /var/www/fixedpoint;</code>
+<ul>
+<li>This tells nginx to consider <code>/var/www/fixedpoint</code> the root directory for this server.
+So, by default, if we requested say &ldquo;/blah&rdquo;, nginx would look up <code>/var/www/fixedpoint/blah</code>.
+Of course, with the <code>location ~ /(.*)</code> block, we currently override this by proxying to the <code>www</code> subdomain.</li>
+</ul>
+</li>
+<li><code>location ~ /.well-known/acme-challenge/(.*)</code>
+<ul>
+<li>This block (when it contains <code>allow any;</code>) tells nginx to let any IP address poke around at URLs matching the regex.</li>
+</ul>
+</li>
+</ul>
+<p>When nginx handles a request, it will go through the various <code>location</code> blocks for a server from top to bottom, picking the first one that matches.
+So, putting these two changes together means that a request to <code>http://fixedpoint.xyz/.well-known/acme-challenge/blah</code> will trigger nginx to look for <code>/var/www/fixedpoint/.well-known/acme-challenge/blah</code> and return a 200.</p>
+<h3 id=giving-up-on-www>Giving Up on <code>www</code></h3>
+<p>So now we rerun the <code>letsencrypt</code> command from above.
+It fails.
+Womp womp.</p>
+<p>However, the error message is smaller!
+Now I&rsquo;m looking at:</p>
+<pre tabindex=0><code>Failed authorization procedure. www.fixedpoint.xyz (http-01):
+    urn:acme:error:unauthorized ::
+    The client lacks sufficient authorization ::
+    Invalid response from http://www.fixedpoint.xyz/.well-known/acme-challenge/789[...]eSA [255.255.255.255]: 404
+
+IMPORTANT NOTES:
+ - The following 'urn:acme:error:unauthorized' errors were reported by
+   the server:
+
+   Domains: www.fixedpoint.xyz
+   Error: The client lacks sufficient authorization
+</code></pre><p>Looks like it worked for the root domain, but we still can&rsquo;t handle the <code>www</code> subdomain.</p>
+<p>Ohhhhh, right.
+That&rsquo;s because my DNS CNAME points <code>www</code> to my GitHub Pages domain.
+There&rsquo;s no <code>/.well-known/acme-challenge</code> directory in my Pages repository.
+So of course it doesn&rsquo;t work.
+I solved this by (temporarily (?)) giving up on encrypting the <code>www</code> subdomain.
+In fact, as of writing this, if you visit <a href=https://www.fixedpoint.xyz/>https://www.fixedpoint.xyz/</a> you&rsquo;ll see that scary &ldquo;YOUR CONNECTION IS NOT SECURE,&rdquo; assuming your browser cares about your safety.</p>
+<h3 id=redirect-me-please>Redirect Me, Please</h3>
+<p>Next up, we need nginx to take incoming http requests and send back a 301 redirect to https.</p>
+<h3 id=encrypted-roots>Encrypted Roots</h3>
+<p>First up (after a fair amount of googling), I tried the following nginx config:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">28
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">29
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">30
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">31
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">32
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">33
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-nginx data-lang=nginx><span style=color:#ff79c6>server</span> {
+    <span style=color:#ff79c6>listen</span> <span style=color:#bd93f9>80</span>;
+    <span style=color:#ff79c6>listen</span> <span style=color:#f1fa8c>[::]:80</span>;
+
+    <span style=color:#ff79c6>server_name</span> <span style=color:#f1fa8c>fixedpoint.xyz</span>;
+
+    <span style=color:#ff79c6>root</span> <span style=color:#f1fa8c>/var/www/fixedpoint</span>;
+
+    <span style=color:#ff79c6>location</span> ~ <span style=color:#f1fa8c>/.well-known/acme-challenge/(.*)</span> {
+        <span style=color:#ff79c6>default_type</span> <span style=color:#f1fa8c>&#34;text/plain&#34;</span>;
+    }
+
+    <span style=color:#ff79c6>location</span> <span style=color:#f1fa8c>/</span> {
+        <span style=color:#ff79c6>return</span> <span style=color:#bd93f9>301</span> <span style=color:#f1fa8c>https://</span><span style=color:#8be9fd;font-style:italic>$host$request_uri</span>;
+    }
+}
+
+<span style=color:#ff79c6>server</span> {
+    <span style=color:#ff79c6>listen</span> <span style=color:#bd93f9>443</span> <span style=color:#f1fa8c>ssl</span>;
+    <span style=color:#ff79c6>server_name</span> <span style=color:#f1fa8c>fixedpoint.xyz</span>;
+
+    <span style=color:#ff79c6>ssl</span> on;
+    <span style=color:#ff79c6>ssl_certificate</span> <span style=color:#f1fa8c>/etc/letsencrypt/live/fixedpoint.xyz/fullchain.pem</span>;
+    <span style=color:#ff79c6>ssl_certificate_key</span> <span style=color:#f1fa8c>/etc/letsencrypt/live/fixedpoint.xyz/privkey.pem</span>;
+
+    <span style=color:#ff79c6>location</span> ~ <span style=color:#f1fa8c>/(.*)</span> {
+        <span style=color:#ff79c6>resolver</span> <span style=color:#bd93f9>127</span><span style=color:#f1fa8c>.0.0.1</span>;
+        <span style=color:#ff79c6>proxy_pass</span> <span style=color:#f1fa8c>http://www.fixedpoint.xyz/</span><span style=color:#8be9fd;font-style:italic>$1$is_args$args</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Real-IP</span> <span style=color:#8be9fd;font-style:italic>$remote_addr</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Forwarded-For</span> <span style=color:#8be9fd;font-style:italic>$proxy_add_x_forwarded_for</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Host</span> <span style=color:#8be9fd;font-style:italic>$server_name</span>;
+    }
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>This mostly works!
+We now have two nginx servers.</p>
+<p>The first listens on port 80 for HTTP.
+It takes any request (except those going to <code>/.well-known/acme-challenge/blah</code>) and returns a 301 redirect to the HTTPS version of the URL.</p>
+<p>The second listens on port 443 for HTTPS.
+It does the usual proxying to the <code>www</code> subdomain.
+This eventually ends up at the GitHub Pages address, like before.</p>
+<p>Visiting <a href=https://fixedpoint.xyz>https://fixedpoint.xyz</a> works!
+Even better, visiting <a href=http://fixedpoint.xyz>http://fixedpoint.xyz</a> redirects me to HTTPS, as it should!
+Woohoo!!!</p>
+<h3 id=encrypt-it-all>Encrypt It All</h3>
+<p>What&rsquo;s the problem?
+Remember how we didn&rsquo;t get a cert for the <code>www</code> subdomain?</p>
+<p>I clicked on &ldquo;/blog&rdquo;.
+I got proxied to <a href=http://www.fixedpoint.xyz/blog>http://www.fixedpoint.xyz/blog</a>.</p>
+<p>Noooooooooooo!!!!!!!!!!!!<sup id=fnref:1><a href=#fn:1 class=footnote-ref role=doc-noteref>1</a></sup></p>
+<p>This one took me over an hour to solve.
+I must admit, I had not spent that much time with nginx configurations before, so I had limited knowledge.
+But, the internet&rsquo;s knowledge is boundless!</p>
+<p>Hilariously - but also a bit frustratingly - all it took was a single line added to the proxying instructions:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">8
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-nginx data-lang=nginx><span style=color:#ff79c6>server</span> {
+    <span style=color:#6272a4># ssl stuff
+</span><span style=color:#6272a4></span>
+    <span style=color:#ff79c6>location</span> ~ <span style=color:#f1fa8c>/(.*)</span> {
+        <span style=color:#6272a4># other proxy stuff
+</span><span style=color:#6272a4></span>        <span style=color:#ff79c6>proxy_redirect</span> <span style=color:#f1fa8c>http://www.</span> <span style=color:#f1fa8c>https://</span>
+    }
+}
+</code></pre></td></tr></table>
+</div>
+</div><p>This works!
+When a request goes out, nginx will strip the &ldquo;http://www.&rdquo; off the beginning and replace it with &ldquo;https://&rdquo;.
+Now I don&rsquo;t get redirected to <code>www</code> when I click on &ldquo;/blog&rdquo;!</p>
+<p>So the final config looks like:</p>
+<div class=highlight><div style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4>
+<table style=border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block><tr><td style=vertical-align:top;padding:0;margin:0;border:0>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 1
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 2
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 3
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 4
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 5
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 6
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 7
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 8
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f"> 9
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">10
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">11
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">12
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">13
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">14
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">15
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">16
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">17
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">18
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">19
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">20
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">21
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">22
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">23
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">24
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">25
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">26
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">27
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">28
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">29
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">30
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">31
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">32
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">33
+</span><span style="margin-right:.4em;padding:0 .4em;color:#7f7f7f">34
+</span></code></pre></td>
+<td style=vertical-align:top;padding:0;margin:0;border:0;width:100%>
+<pre tabindex=0 style=color:#f8f8f2;background-color:#282a36;-moz-tab-size:4;-o-tab-size:4;tab-size:4><code class=language-nginx data-lang=nginx><span style=color:#ff79c6>server</span> {
+    <span style=color:#ff79c6>listen</span> <span style=color:#bd93f9>80</span>;
+    <span style=color:#ff79c6>listen</span> <span style=color:#f1fa8c>[::]:80</span>;
+
+    <span style=color:#ff79c6>server_name</span> <span style=color:#f1fa8c>fixedpoint.xyz</span>;
+
+    <span style=color:#ff79c6>root</span> <span style=color:#f1fa8c>/var/www/fixedpoint</span>;
+
+    <span style=color:#ff79c6>location</span> ~ <span style=color:#f1fa8c>/.well-known/acme-challenge/(.*)</span> {
+        <span style=color:#ff79c6>default_type</span> <span style=color:#f1fa8c>&#34;text/plain&#34;</span>;
+    }
+
+    <span style=color:#ff79c6>location</span> <span style=color:#f1fa8c>/</span> {
+        <span style=color:#ff79c6>return</span> <span style=color:#bd93f9>301</span> <span style=color:#f1fa8c>https://</span><span style=color:#8be9fd;font-style:italic>$host$request_uri</span>;
+    }
+}
+
+<span style=color:#ff79c6>server</span> {
+    <span style=color:#ff79c6>listen</span> <span style=color:#bd93f9>443</span> <span style=color:#f1fa8c>ssl</span>;
+    <span style=color:#ff79c6>server_name</span> <span style=color:#f1fa8c>fixedpoint.xyz</span>;
+
+    <span style=color:#ff79c6>ssl</span> on;
+    <span style=color:#ff79c6>ssl_certificate</span> <span style=color:#f1fa8c>/etc/letsencrypt/live/fixedpoint.xyz/fullchain.pem</span>;
+    <span style=color:#ff79c6>ssl_certificate_key</span> <span style=color:#f1fa8c>/etc/letsencrypt/live/fixedpoint.xyz/privkey.pem</span>;
+
+    <span style=color:#ff79c6>location</span> ~ <span style=color:#f1fa8c>/(.*)</span> {
+        <span style=color:#ff79c6>resolver</span> <span style=color:#bd93f9>127</span><span style=color:#f1fa8c>.0.0.1</span>;
+        <span style=color:#ff79c6>proxy_pass</span> <span style=color:#f1fa8c>http://www.fixedpoint.xyz/</span><span style=color:#8be9fd;font-style:italic>$1$is_args$args</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Real-IP</span> <span style=color:#8be9fd;font-style:italic>$remote_addr</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Forwarded-For</span> <span style=color:#8be9fd;font-style:italic>$proxy_add_x_forwarded_for</span>;
+        <span style=color:#ff79c6>proxy_set_header</span> <span style=color:#f1fa8c>X-Host</span> <span style=color:#8be9fd;font-style:italic>$server_name</span>;
+        <span style=color:#ff79c6>proxy_redirect</span> <span style=color:#f1fa8c>http://www.</span> <span style=color:#f1fa8c>https://</span>
+    }
+}
+</code></pre></td></tr></table>
+</div>
+</div><h3 id=the-machines-take-over>The Machines Take Over</h3>
+<p>There&rsquo;s only one thing left to do.
+My cert will expire in June, which means I need to remember to log back in to my droplet and generate a new cerrt before then.
+This is done by running <code>letsencrypt renew</code>.</p>
+<p>Just kidding! - at least about the &ldquo;logging back in&rdquo; bit.
+I don&rsquo;t want to have to remember to do that.
+I&rsquo;ll almost surely forget.
+Let&rsquo;s automate with <a href=https://en.wikipedia.org/wiki/Cron>cron</a>!
+Simply add the following to your crontab:</p>
+<pre tabindex=0><code class=language-cron data-lang=cron>@monthly letsencrypt renew
+</code></pre><p>The <code>renew</code> command is idempotent, which means we can run it more often than we need to.
+This ensures I&rsquo;m covered in case the command fails - it will run the next month, still before my cert expires.
+I could run it every second if I wanted to, but be kind to others - especially people that issue free SSL certs.</p>
+<h2 id=the-end>The End</h2>
+<p>What a tale!
+I hope you learned something.
+If you see anything wrong with my setup, please let me know!
+I&rsquo;m thinking next I&rsquo;ll point <code>www</code> at my droplet and get a cert for that subdomain as well.
+That will have to wait until I get some more free time, though.</p>
+<section class=footnotes role=doc-endnotes>
+<hr>
+<ol>
+<li id=fn:1 role=doc-endnote>
+<p><a href=http://www.nooooooooooooooo.com/>http://www.nooooooooooooooo.com/</a>&#160;<a href=#fnref:1 class=footnote-backref role=doc-backlink>&#8617;&#xfe0e;</a></p>
+</li>
+</ol>
+</section>
+</article>
+</div>
+<footer>
+&copy; Andrew Mason 2025
+&nbsp;
+<a href=https://twitter.com/andrew_mason1 target=_blank>@andrew_mason1</a>
+</footer>
+</body>
+</html>

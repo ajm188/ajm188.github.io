@@ -1,0 +1,19 @@
+/* TEAM */
+
+    Owner: Andrew Mason
+    Twitter: @andrew_mason1
+    From: Rochester, NY
+
+/* SITE */
+
+    Last update: Thursday, April 24, 2025
+    Language: en
+    Doctype: HTML5
+    Tools: VSCode, hugo, simplecss, GitHub Actions
+    
+===
+
+humans.txt is "an initiative for knowing the people behind a website".
+You can read more about the idea at https://humanstxt.org.
+
+
