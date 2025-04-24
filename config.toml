@@ -1,4 +1,4 @@
-baseURL = "https://ajm188.github.io"
+baseURL = "https://a.ndrw.dev"
 languageCode = "en-us"
 title = "Home"
 disableKinds = ["taxonomy", "taxonomyTerm"]
